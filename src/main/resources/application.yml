@@ -1,0 +1,22 @@
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/pillar
+    username: ${DB_NAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    # Remove PostgreSQLDialect as it's auto-detected
+    properties:
+      hibernate:
+        # Replace deprecated setting
+        boot.allow_jdbc_metadata_access: true
+        jdbc:
+          lob:
+            non_contextual_creation: true
+        show_sql: true  # Fixed placement
+    hibernate:
+      ddl-auto: update
+      naming:
+        implicit-strategy: org.hibernate.boot.model.naming.ImplicitNamingStrategyComponentPathImpl
+  # Add this to disable the open-in-view warning
+  jpa.open-in-view: false
