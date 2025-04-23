@@ -51,4 +51,5 @@ interface UserRepository : BaseRepository<User> {
     fun findByPhoneNumber(phoneNumber: String): User?
     fun findByRole(role: Roles): User?
     fun findByTelegramChatId(chatId: Long): User?
+    fun findByFirstNameAndAndDeletedFalse(name:String): User?
 }
