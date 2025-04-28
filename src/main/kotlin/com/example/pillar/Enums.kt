@@ -31,3 +31,7 @@ enum class ErrorCode(val code: Int) {
     RESOURCE_NOT_FOUND(-7),
     VALIDATION_ERROR(-8)
 }
+
+enum class TokenType {
+    ACCESS, REFRESH, CONFIRMATION, PASSWORD_RESET
+}

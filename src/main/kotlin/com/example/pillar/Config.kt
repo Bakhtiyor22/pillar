@@ -1,18 +1,18 @@
 package com.example.pillar
 
-import com.example.demo.JwtAuthFilter
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
-import org.springframework.boot.CommandLineRunner
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.support.ResourceBundleMessageSource
 import org.springframework.data.domain.AuditorAware
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing
 import org.springframework.security.authentication.AuthenticationManager
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
@@ -31,7 +31,9 @@ import java.util.Locale
 import java.util.Optional
 import kotlin.text.startsWith
 import kotlin.text.substring
-
+import org.springframework.security.core.GrantedAuthority
+import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.core.userdetails.UserDetails
 
 @Configuration
 @EnableJpaAuditing
@@ -59,7 +61,7 @@ class AuditorAwareImpl : AuditorAware<String> {
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true)
 class SecurityConfig(
-    private val customUserDetailsService: CustomUserDetailsService,
+    private val userPrincipalDetailsService: UserPrincipalDetailsService, // Changed service name
     private val jwtAuthFilter: JwtAuthFilter
 ) {
     @Bean
@@ -68,22 +70,24 @@ class SecurityConfig(
     @Bean
     fun authenticationProvider(): DaoAuthenticationProvider {
         val provider = DaoAuthenticationProvider()
-        provider.setUserDetailsService(customUserDetailsService)
+        provider.setUserDetailsService(userPrincipalDetailsService) // Use the new service
         provider.setPasswordEncoder(passwordEncoder())
         return provider
     }
 
+    // Updated way to get AuthenticationManager in Spring Boot 3+
     @Bean
-    fun authenticationManager(http: HttpSecurity): AuthenticationManager {
-        val authBuilder = http.getSharedObject(AuthenticationManagerBuilder::class.java)
-        authBuilder.userDetailsService(customUserDetailsService)
-        return authBuilder.build()
+    fun authenticationManager(authenticationConfiguration: AuthenticationConfiguration): AuthenticationManager {
+        return authenticationConfiguration.authenticationManager
     }
 
     @Bean
-    fun filterChain(http: HttpSecurity, authManager: AuthenticationManager): SecurityFilterChain {
+    fun filterChain(http: HttpSecurity): SecurityFilterChain { // Removed authManager parameter
         http
             .csrf { it.disable() }
+            .headers { headers ->
+                headers.frameOptions { it.sameOrigin() }  // Add this line for H2 console frame support
+            }
             .authorizeHttpRequests { auth ->
                 auth.requestMatchers(
                     "/api/v1/auth/**",
@@ -91,12 +95,13 @@ class SecurityConfig(
                     "/api-docs/**",
                     "/swagger-resources/**",
                     "/webjars/**",
-                    "/swagger-ui.html"
+                    "/swagger-ui.html",
+                    "/h2-console/**"
                 ).permitAll()
                 auth.anyRequest().authenticated()
             }
             .cors { }
-            .authenticationProvider(authenticationProvider())
+            .authenticationProvider(authenticationProvider()) // Provider already configured
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter::class.java)
 
         return http.build()
@@ -106,7 +111,7 @@ class SecurityConfig(
 @Component
 class JwtAuthFilter(
     private val jwtUtils: JwtUtils,
-    private val userService: CustomUserDetailsService
+    private val userPrincipalDetailsService: UserPrincipalDetailsService // Changed service name
 ) : OncePerRequestFilter() {
 
     override fun doFilterInternal(
@@ -118,16 +123,24 @@ class JwtAuthFilter(
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             val token = authHeader.substring(7)
             if (jwtUtils.validateToken(token)) {
-                val username = jwtUtils.extractUsername(token)
-                val userDetails = userService.loadUserByUsername(username)
-                val authToken = jwtUtils.getAuthentication(token, userDetails)
-
-                SecurityContextHolder.getContext().authentication = authToken
-                filterChain.doFilter(request, response)
-                return
+                val email = jwtUtils.extractUsername(token) // Now extracts email
+                // Check if security context already has authentication
+                if (email != null && SecurityContextHolder.getContext().authentication == null) {
+                    val userDetails = userPrincipalDetailsService.loadUserByUsername(email) // Use the new service
+                    // Double check token validity specific to userDetails if needed
+                    // if (jwtUtils.isTokenValid(token, userDetails)) { // Assuming you add isTokenValid method
+                    val authToken = UsernamePasswordAuthenticationToken(
+                        userDetails,
+                        null, // Credentials are null for token-based auth
+                        userDetails.authorities
+                    )
+                    // Set authentication in context
+                    SecurityContextHolder.getContext().authentication = authToken
+                    // }
+                }
             }
         }
-        filterChain.doFilter(request, response)
+        filterChain.doFilter(request, response) // Continue filter chain regardless
     }
 }
 
@@ -162,3 +175,36 @@ class AppConfig : WebMvcConfigurer {
         registry.addInterceptor(localeChangeInterceptor())
     }
 }
+
+data class UserPrincipalDetails(
+    val id: Long?,
+    private val userEmail: String,
+    private val userPassword: String,
+    private val userAuthorities: Collection<GrantedAuthority>, // Changed from override val
+    val provider: String = "local"
+) : UserDetails {
+
+    constructor(user: User) : this(
+        id = user.id,
+        userEmail = user.email,
+        userPassword = user.password,
+        userAuthorities = listOf(SimpleGrantedAuthority("ROLE_${user.role.name}")),
+        provider = "local" // Assuming local provider for direct registration/login
+    )
+
+    // Now properly override the method from UserDetails interface
+    override fun getAuthorities(): Collection<GrantedAuthority> = userAuthorities
+
+    override fun getPassword(): String = userPassword
+
+    override fun getUsername(): String = userEmail
+
+    override fun isAccountNonExpired(): Boolean = true
+
+    override fun isAccountNonLocked(): Boolean = true
+
+    override fun isCredentialsNonExpired(): Boolean = true
+
+    override fun isEnabled(): Boolean = true
+}
+

@@ -1,22 +1,6 @@
 package com.example.pillar
 
-import jakarta.persistence.CascadeType
-import jakarta.persistence.Column
-import jakarta.persistence.Entity
-import jakarta.persistence.EntityListeners
-import jakarta.persistence.EnumType
-import jakarta.persistence.Enumerated
-import jakarta.persistence.FetchType
-import jakarta.persistence.GeneratedValue
-import jakarta.persistence.GenerationType
-import jakarta.persistence.Id
-import jakarta.persistence.JoinColumn
-import jakarta.persistence.ManyToOne
-import jakarta.persistence.MappedSuperclass
-import jakarta.persistence.OneToMany
-import jakarta.persistence.Table
-import jakarta.persistence.Temporal
-import jakarta.persistence.TemporalType
+import jakarta.persistence.*
 import org.hibernate.annotations.ColumnDefault
 import org.springframework.data.annotation.CreatedBy
 import org.springframework.data.annotation.CreatedDate
@@ -25,7 +9,8 @@ import org.springframework.data.annotation.LastModifiedDate
 import org.springframework.data.jpa.domain.support.AuditingEntityListener
 import java.time.Instant
 import java.time.LocalTime
-import java.util.Date
+import java.time.ZonedDateTime
+import java.util.*
 
 @MappedSuperclass
 @EntityListeners(AuditingEntityListener::class)
@@ -47,12 +32,13 @@ class User(
     var email: String,
     @Column(nullable = false)
     var password: String,
-    @Column(unique = true, nullable = true)
-    var phoneNumber: String?,
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     var role: Roles,
     var telegramChatId: Long? = null,
+    var provider: String? = null,
+    var providerId: String? = null,
+    var confirmed: Boolean? = false,
 
     @OneToMany(mappedBy = "user", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
     var medications: MutableSet<Medication> = mutableSetOf(),
@@ -127,8 +113,6 @@ class Medication(
     var schedules: MutableSet<Schedule> = mutableSetOf()
 ) : BaseEntity()
 
-// --- Schedule Entity (Unchanged) ---
-
 @Entity
 @Table(name = "schedules")
 class Schedule(
@@ -171,6 +155,34 @@ class TakenLog(
     @JoinColumn(name = "user_id", nullable = false)
     var user: User
 ) : BaseEntity()
+
+@Entity
+@Table(name = "tokens")
+class Token(
+    var token: String,
+    var tokenType: TokenType,
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(nullable = false, name = "user_id")
+    var user: User,
+    @OneToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "session_id")
+    var session: Session
+): BaseEntity()
+
+@Entity
+@Table(name = "sessions")
+class Session(
+    @ManyToOne
+    @JoinColumn(name = "user_id", nullable = false)
+    var user: User,
+
+    var deviceName: String,
+
+    @OneToOne(mappedBy = "session", cascade = [CascadeType.ALL], fetch = FetchType.EAGER)
+    var refreshToken: Token?,
+
+    @Temporal(TemporalType.TIMESTAMP) var expiredAt: Date? = null
+): BaseEntity()
 
 
 

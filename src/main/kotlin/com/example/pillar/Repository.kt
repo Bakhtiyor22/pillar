@@ -14,6 +14,7 @@ import org.springframework.data.repository.NoRepositoryBean
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
+import java.util.*
 
 @Configuration
 @EnableJpaRepositories(
@@ -48,8 +49,25 @@ class BaseRepositoryImpl<T : BaseEntity>(
 
 @Repository
 interface UserRepository : BaseRepository<User> {
-    fun findByPhoneNumber(phoneNumber: String): User?
-    fun findByRole(role: Roles): User?
-    fun findByTelegramChatId(chatId: Long): User?
-    fun findByFirstNameAndAndDeletedFalse(name:String): User?
+    fun findByEmail(email: String): User?
+    fun existsByEmail(email: String?): Boolean
+}
+
+@Repository
+interface SessionRepository : BaseRepository<Session> {
+    fun deleteByUserId(id: Long)
+    fun findByUserAndExpiredAtAfter(user: User, expiredAt: Date): MutableList<Session>
+}
+
+@Repository
+interface TokenRepository : BaseRepository<Token> {
+    fun findByToken(token: String): Token?
+
+    fun findByUserEmailAndTokenType(email: String, tokenType: TokenType): Token?
+
+    fun deleteByUserEmailAndTokenType(email: String, tokenType: TokenType)
+
+    fun findAllByUserAndTokenType(user: User, tokenType: TokenType): MutableList<Token>
+
+    fun deleteByUserId(id: Long)
 }

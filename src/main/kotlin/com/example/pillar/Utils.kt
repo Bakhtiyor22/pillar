@@ -5,8 +5,6 @@ import io.jsonwebtoken.Jwts
 import io.jsonwebtoken.SignatureAlgorithm
 import io.jsonwebtoken.security.Keys
 import org.springframework.context.i18n.LocaleContextHolder
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
-import org.springframework.security.core.userdetails.UserDetails
 import org.springframework.stereotype.Component
 import java.util.Base64
 import java.util.Date
@@ -27,9 +25,10 @@ class JwtUtils {
 
     fun generateToken(user: User, locale: String? = null): TokenResponse {
         val now = Date()
+        val userDetails = UserPrincipalDetails(user)
 
         val accessToken = Jwts.builder()
-            .setSubject(user.phoneNumber)
+            .setSubject(userDetails.username)
             .claim("role", user.role.name)
             .claim("userId", user.id)
             .claim("locale", locale ?: LocaleContextHolder.getLocale().language)
@@ -40,8 +39,7 @@ class JwtUtils {
             .compact()
 
         val refreshToken = Jwts.builder()
-            .setSubject(user.phoneNumber)
-            .claim("locale", locale ?: LocaleContextHolder.getLocale().language)
+            .setSubject(userDetails.username)
             .claim("tokenType", "REFRESH")
             .setIssuedAt(now)
             .setExpiration(Date(now.time + refreshTokenExpiry))
@@ -65,12 +63,8 @@ class JwtUtils {
         }
     }
 
-    fun extractUsername(token: String): String =
+    fun extractUsername(token: String): String? =
         Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token).body.subject
-
-    fun getAuthentication(token: String, userDetails: UserDetails): UsernamePasswordAuthenticationToken {
-        return UsernamePasswordAuthenticationToken(userDetails, null, userDetails.authorities)
-    }
 
     fun getJwtParser(): JwtParserBuilder {
         return Jwts.parserBuilder().setSigningKey(key)
