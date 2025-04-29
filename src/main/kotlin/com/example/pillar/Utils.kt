@@ -70,3 +70,10 @@ class JwtUtils {
         return Jwts.parserBuilder().setSigningKey(key)
     }
 }
+
+fun getCurrentUserId(): Long {
+    val authentication: Authentication = SecurityContextHolder.getContext().authentication
+    val userDetails = authentication.principal as? UserPrincipalDetails
+        ?: throw IllegalStateException("User not authenticated")
+    return userDetails.getId() ?: throw IllegalStateException("User ID not found in principal")
+}

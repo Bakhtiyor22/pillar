@@ -71,3 +71,19 @@ interface TokenRepository : BaseRepository<Token> {
 
     fun deleteByUserId(id: Long)
 }
+
+@Repository
+interface MedicationRepository : BaseRepository<Medication> {
+    fun findByUserIdAndDeletedFalse(userId: Long, pageable: Pageable): Page<Medication>
+    fun findByUserIdAndDeletedFalse(userId: Long): List<Medication>
+    fun findByIdAndUserIdAndDeletedFalse(id: Long, userId: Long): Medication?
+}
+
+@Repository
+interface ScheduleRepository : BaseRepository<Schedule> {
+    fun findByMedicationId(medicationId: Long): List<Schedule>
+
+    @Transactional // Needed for modifying queries
+    @Modifying // Indicates the query modifies data
+    fun deleteByMedicationId(medicationId: Long)
+}

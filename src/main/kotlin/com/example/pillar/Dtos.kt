@@ -83,3 +83,57 @@ data class AuthResponse(
         fun builder() = AuthResponse()
     }
 }
+
+data class createMedicationRequest(
+    @NotBlank(message = "Medication name is required")
+    val name: String,
+    val dosage: String?,
+    val form: String?, // e.g., Tablet, Capsule
+    val frequency: String?, // e.g., Daily, Twice a day
+    val startDate: LocalDate?,
+    val endDate: LocalDate?,
+    val times: List<LocalTime>?, // List of specific times, e.g., ["08:00", "20:00"]
+    val instructions: String?
+)
+
+data class updateMedicationRequest(
+    val name: String?, // Allow partial updates
+    val dosage: String?,
+    val form: String?,
+    val frequency: String?,
+    val startDate: LocalDate?,
+    val endDate: LocalDate?,
+    val times: List<LocalTime>?,
+    val instructions: String?
+)
+
+data class MedicationDTO(
+    val id: Long,
+    val name: String,
+    val dosage: String?,
+    val form: String?,
+    val frequency: String?,
+    val startDate: LocalDate?,
+    val endDate: LocalDate?,
+    val times: List<LocalTime>?,
+    val instructions: String?,
+    val userId: UUID // Include user ID for reference
+)
+
+fun Medication.toDTO(): MedicationDTO {
+    // Fetch associated schedules - consider efficiency for lists
+    val scheduleTimes = scheduleRepository.findByMedicationId(this.id)
+                            .mapNotNull { it.scheduledTime }
+    return MedicationDTO(
+        id = this.id,
+        name = this.name ?: "",
+        dosage = this.dosage,
+        form = this.form,
+        frequency = this.frequency,
+        startDate = this.startDate,
+        endDate = this.endDate,
+        times = scheduleTimes, // Use fetched schedule times
+        instructions = this.instructions,
+        userId = this.user?.id ?: throw IllegalStateException("Medication user is null")
+    )
+}

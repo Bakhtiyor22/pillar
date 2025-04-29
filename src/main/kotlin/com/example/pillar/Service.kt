@@ -33,11 +33,6 @@ import org.thymeleaf.TemplateEngine
 import org.thymeleaf.context.Context // Use org.thymeleaf.context.Context
 import java.security.SecureRandom
 
-
-// UserPrincipalDetailsService remains the same
-
-// GoogleTokenVerifierService remains the same (though not directly used by AuthService in redirect flow)
-
 @Service
 class UserPrincipalDetailsService(
     private val userRepository: UserRepository
@@ -91,8 +86,37 @@ interface EmailService {
     fun sendEmail(to: String, subject: String, body: String)
 }
 
+interface AuthService {
+    fun register(request: RegisterRequest): User
+
+    fun confirmEmail(token: String): Boolean
+
+    fun login(request: AuthRequest, userAgent: String?): TokenResponse
+
+    fun refreshToken(request: RefreshTokenRequest): TokenResponse
+
+    // fun authenticateWithGoogle(request: GoogleAuthRequest, userAgent: String?): TokenResponse
+
+    fun initiatePasswordReset(email: String): Boolean
+
+    fun resetPassword(email: String, code: String, newPassword: String): Boolean
+}
+
+
+interface MedicationService {
+    fun getAllMedications(): List<Medication>
+
+    fun getMedicationById(id: Long): Medication
+
+    fun createMedication(medication: createMedicationRequest): MedicationDTO
+
+    fun updateMedication(id: Long, medication: updateMedicationRequest): MedicationDTO
+
+    fun deleteMedication(id: Long)
+}
+
 @Service
-class AuthService(
+class AuthServiceImpl (
     private val userRepository: UserRepository,
     private val passwordEncoder: PasswordEncoder,
     private val authenticationManager: AuthenticationManager,
@@ -101,13 +125,13 @@ class AuthService(
     private val sessionRepository: SessionRepository,
     private val emailService: EmailService,
     private val googleTokenVerifierService: GoogleTokenVerifierService
-) {
+): AuthService {
 
     /**
      * Register a new user with email verification
      */
     @Transactional
-    fun register(request: RegisterRequest): User {
+    override fun register(request: RegisterRequest): User {
         // Check if email is already in use
         if (userRepository.existsByEmail(request.email)) {
             throw DuplicateResourceException("Email address already in use!")
@@ -158,7 +182,7 @@ class AuthService(
 
         // Send confirmation email with the token
         val confirmationLink = "http://yourdomain.com/confirm?token=$tokenString" // Change this URL
-        emailService.sendConfirmationEmail(user.email, confirmationLink)
+//        emailService.sendConfirmationEmail(user.email, confirmationLink)
 
         return savedUser
     }
@@ -167,7 +191,7 @@ class AuthService(
      * Confirm user's email with the provided token
      */
     @Transactional
-    fun confirmEmail(token: String): Boolean {
+    override fun confirmEmail(token: String): Boolean {
         val confirmationToken = tokenRepository.findByToken(token)
             ?: throw InvalidInputException("Invalid confirmation token")
 
@@ -195,7 +219,7 @@ class AuthService(
      * Login with email and password
      */
     @Transactional
-    fun login(request: AuthRequest, userAgent: String? = "Unknown"): TokenResponse {
+    override fun login(request: AuthRequest, userAgent: String? = "Unknown"): TokenResponse {
         try {
             // Authenticate with Spring Security
             val authentication: Authentication = authenticationManager.authenticate(
@@ -278,7 +302,7 @@ class AuthService(
      * Refresh token to get new access tokens
      */
     @Transactional
-    fun refreshToken(request: RefreshTokenRequest): TokenResponse {
+    override fun refreshToken(request: RefreshTokenRequest): TokenResponse {
         val refreshTokenStr = request.refreshToken
 
         // First validate JWT structure and signature
@@ -324,66 +348,66 @@ class AuthService(
     /**
      * Authenticate with Google OAuth
      */
-    @Transactional
-    fun authenticateWithGoogle(request: GoogleAuthRequest, userAgent: String? = "Google Auth"): TokenResponse {
-        // Verify Google token
-        val googleIdToken = googleTokenVerifierService.verifyToken(request.idToken)
-            ?: throw AuthenticationServiceException("Invalid Google token")
+    // @Transactional
+    // fun authenticateWithGoogle(request: GoogleAuthRequest, userAgent: String? = "Google Auth"): TokenResponse {
+    //     // Verify Google token
+    //     val googleIdToken = googleTokenVerifierService.verifyToken(request.idToken)
+    //         ?: throw AuthenticationServiceException("Invalid Google token")
 
-        val payload = googleIdToken.payload
-        val email = payload.email
-        val name = payload["name"] as? String
-        val providerId = payload.subject
+    //     val payload = googleIdToken.payload
+    //     val email = payload.email
+    //     val name = payload["name"] as? String
+    //     val providerId = payload.subject
 
-        // Check if user exists
-        val user = userRepository.findByEmail(email) ?: run {
-            // Create new user if not exists
-            val newUser = User(
-                firstName = name?.split(" ")?.firstOrNull() ?: "Google",
-                lastName = name?.split(" ")?.lastOrNull(),
-                email = email,
-                password = passwordEncoder.encode(UUID.randomUUID().toString()), // Random password
-                role = Roles.CUSTOMER,
-                confirmed = true, // Google users are pre-verified
-                provider = "google",
-                providerId = providerId
-            )
-            userRepository.save(newUser)
-        }
+    //     // Check if user exists
+    //     val user = userRepository.findByEmail(email) ?: run {
+    //         // Create new user if not exists
+    //         val newUser = User(
+    //             firstName = name?.split(" ")?.firstOrNull() ?: "Google",
+    //             lastName = name?.split(" ")?.lastOrNull(),
+    //             email = email,
+    //             password = passwordEncoder.encode(UUID.randomUUID().toString()), // Random password
+    //             role = Roles.CUSTOMER,
+    //             confirmed = true, // Google users are pre-verified
+    //             provider = "google",
+    //             providerId = providerId
+    //         )
+    //         userRepository.save(newUser)
+    //     }
 
-        // Create session
-        val session = Session(
-            user = user,
-            deviceName = userAgent ?: "Google Auth",
-            refreshToken = null,
-            expiredAt = java.util.Date.from(Instant.now().plus(7, ChronoUnit.DAYS))
-        )
-        val savedSession = sessionRepository.save(session)
+    //     // Create session
+    //     val session = Session(
+    //         user = user,
+    //         deviceName = userAgent ?: "Google Auth",
+    //         refreshToken = null,
+    //         expiredAt = java.util.Date.from(Instant.now().plus(7, ChronoUnit.DAYS))
+    //     )
+    //     val savedSession = sessionRepository.save(session)
 
-        // Generate tokens
-        val tokenResponse = jwtUtils.generateToken(user)
+    //     // Generate tokens
+    //     val tokenResponse = jwtUtils.generateToken(user)
 
-        // Save refresh token
-        val refreshToken = Token(
-            token = tokenResponse.refreshToken,
-            tokenType = TokenType.REFRESH,
-            user = user,
-            session = savedSession
-        )
-        val savedToken = tokenRepository.save(refreshToken)
+    //     // Save refresh token
+    //     val refreshToken = Token(
+    //         token = tokenResponse.refreshToken,
+    //         tokenType = TokenType.REFRESH,
+    //         user = user,
+    //         session = savedSession
+    //     )
+    //     val savedToken = tokenRepository.save(refreshToken)
 
-        // Update session with token
-        savedSession.refreshToken = savedToken
-        sessionRepository.save(savedSession)
+    //     // Update session with token
+    //     savedSession.refreshToken = savedToken
+    //     sessionRepository.save(savedSession)
 
-        return tokenResponse
-    }
+    //     return tokenResponse
+    // }
 
     /**
      * Start password reset flow by sending reset code
      */
     @Transactional
-    fun initiatePasswordReset(email: String): Boolean {
+    override fun initiatePasswordReset(email: String): Boolean {
         val user = userRepository.findByEmail(email)
             ?: throw UserNotFoundException("If an account exists with this email, a reset link will be sent")
 
@@ -432,7 +456,7 @@ class AuthService(
      * Reset password with verification code
      */
     @Transactional
-    fun resetPassword(email: String, code: String, newPassword: String): Boolean {
+    override fun resetPassword(email: String, code: String, newPassword: String): Boolean {
         // Find token
         val user = userRepository.findByEmail(email)
             ?: throw UserNotFoundException("User not found")
@@ -481,7 +505,7 @@ class AuthService(
 
 @Service // Mark as a Spring service
 class EmailServiceImpl( // Primary constructor for dependency injection
-    private val mailSender: JavaMailSender, // Injects JavaMailSender
+//    private val mailSender: JavaMailSender, // Injects JavaMailSender
     private val templateEngine: TemplateEngine // Injects TemplateEngine
 ) : EmailService { // Implement the EmailService interface
 
@@ -539,19 +563,120 @@ class EmailServiceImpl( // Primary constructor for dependency injection
         sendEmail(to, "Password Changed - Naziir", htmlContent)
     }
 
-    @Throws(MessagingException::class)
     override fun sendEmail(to: String, subject: String, body: String) {
         // Create a MimeMessage using the mailSender
-        val message: MimeMessage = mailSender.createMimeMessage()
-        // Create a MimeMessageHelper with multipart mode
-        val helper = MimeMessageHelper(message, MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED)
-
-        helper.setTo(to)
-        helper.setSubject(subject)
-        // Set the email body, indicating it's HTML (true)
-        helper.setText(body, true)
-
-        // Send the message
-        mailSender.send(message)
+//        val message: MimeMessage = mailSender.createMimeMessage()
+//        // Create a MimeMessageHelper with multipart mode
+//        val helper = MimeMessageHelper(message, MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED)
+//
+//        helper.setTo(to)
+//        helper.setSubject(subject)
+//        // Set the email body, indicating it's HTML (true)
+//        helper.setText(body, true)
+//
+//        // Send the message
+//        mailSender.send(message)
     }
 }
+
+@Service
+class MedicationServiceImpl(
+    private val medicationRepository: MedicationRepository,
+    private val userRepository: UserRepository
+) : MedicationService {
+    override fun getAllMedications(): List<MedicationDTO> {
+        val userId = getCurrentUserId()
+        return medicationRepository.findByUserIdAndDeletedFalse(userId).map { it.toDTO() }
+    }
+
+    override fun getMedicationById(id: Long): MedicationDTO {
+        val userId = getCurrentUserId()
+        val medication = medicationRepository.findByIdAndUserIdAndDeletedFalse(id, userId)
+            ?: throw ResourceNotFoundException("Medication not found with id $id for current user")
+        return medication.toDTO()
+    }
+
+    @Transactional
+    override fun createMedication(request: createMedicationRequest): MedicationDTO {
+        val userId = getCurrentUserId()
+        val user = userRepository.findByIdAndDeletedFalse(userId)
+            ?: throw UserNotFoundException("User not found")
+
+        val medication = Medication(
+            user = user,
+            name = request.name,
+            dosage = request.dosage,
+            form = request.form,
+            frequency = request.frequency,
+            startDate = request.startDate,
+            endDate = request.endDate,
+            // Note: 'times' are handled by creating Schedule entities below
+            instructions = request.instructions
+        )
+        val savedMedication = medicationRepository.save(medication)
+
+        // Create Schedule entities based on request.times
+        request.times?.forEach { time ->
+            val schedule = Schedule(
+                medication = savedMedication,
+                scheduledTime = time
+            )
+            scheduleRepository.save(schedule)
+        }
+
+        return savedMedication.toDTO() // Re-fetch or update DTO with schedule times
+    }
+
+    @Transactional
+    override fun updateMedication(id: Long, request: updateMedicationRequest): MedicationDTO {
+        val userId = getCurrentUserId()
+        val medication = medicationRepository.findByIdAndUserIdAndDeletedFalse(id, userId)
+            ?: throw ResourceNotFoundException("Medication not found with id $id for current user")
+
+        // Update fields if provided in the request
+        request.name?.let { medication.name = it }
+        request.dosage?.let { medication.dosage = it }
+        request.form?.let { medication.form = it }
+        request.frequency?.let { medication.frequency = it }
+        request.startDate?.let { medication.startDate = it }
+        medication.endDate = request.endDate // Allow setting endDate to null
+        request.instructions?.let { medication.instructions = it }
+
+        // Handle schedule updates: Delete old, create new
+        if (request.times != null) {
+            // Delete existing schedules for this medication
+            scheduleRepository.deleteByMedicationId(medication.id)
+            // Create new schedules
+            request.times.forEach { time ->
+                val schedule = Schedule(
+                    medication = medication,
+                    scheduledTime = time
+                )
+                scheduleRepository.save(schedule)
+            }
+        }
+
+        val updatedMedication = medicationRepository.save(medication)
+        return updatedMedication.toDTO() // Re-fetch or update DTO with schedule times
+    }
+
+    @Transactional
+    override fun deleteMedication(id: Long) {
+        val userId = getCurrentUserId()
+        val medication = medicationRepository.findByIdAndUserIdAndDeletedFalse(id, userId)
+            ?: throw ResourceNotFoundException("Medication not found with id $id for current user")
+
+        // Option 1: Soft delete (using BaseRepository's trash method)
+        medicationRepository.trash(id)
+        // Also soft-delete associated schedules if they don't have a 'deleted' flag
+        // Or hard-delete schedules:
+        scheduleRepository.deleteByMedicationId(id)
+
+
+        // Option 2: Hard delete (if not using soft delete)
+        // scheduleRepository.deleteByMedicationId(id) // Delete schedules first
+        // medicationRepository.delete(medication)
+    }
+}
+
+

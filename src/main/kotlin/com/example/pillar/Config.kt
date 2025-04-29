@@ -85,9 +85,6 @@ class SecurityConfig(
     fun filterChain(http: HttpSecurity): SecurityFilterChain { // Removed authManager parameter
         http
             .csrf { it.disable() }
-            .headers { headers ->
-                headers.frameOptions { it.sameOrigin() }  // Add this line for H2 console frame support
-            }
             .authorizeHttpRequests { auth ->
                 auth.requestMatchers(
                     "/api/v1/auth/**",
@@ -96,7 +93,6 @@ class SecurityConfig(
                     "/swagger-resources/**",
                     "/webjars/**",
                     "/swagger-ui.html",
-                    "/h2-console/**"
                 ).permitAll()
                 auth.anyRequest().authenticated()
             }

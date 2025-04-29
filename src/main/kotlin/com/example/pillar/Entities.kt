@@ -38,17 +38,7 @@ class User(
     var telegramChatId: Long? = null,
     var provider: String? = null,
     var providerId: String? = null,
-    var confirmed: Boolean? = false,
-
-    @OneToMany(mappedBy = "user", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
-    var medications: MutableSet<Medication> = mutableSetOf(),
-
-    @OneToMany(mappedBy = "user", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
-    var takenLogs: MutableSet<TakenLog> = mutableSetOf(),
-
-    @OneToMany(mappedBy = "addedByUser", cascade = [CascadeType.PERSIST, CascadeType.MERGE], fetch = FetchType.LAZY)
-    var doctorsAdded: MutableSet<Doctor> = mutableSetOf()
-
+    var confirmed: Boolean? = false
 ) : BaseEntity()
 
 @Entity

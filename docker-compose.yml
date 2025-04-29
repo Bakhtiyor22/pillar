@@ -1,0 +1,18 @@
+# filepath: /Users/2110184/IdeaProjects/pillar/docker-compose.yml
+version: '3.8'
+services:
+  db:
+    image: postgres:15 # You can choose a specific PostgreSQL version
+    container_name: pillar-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: pillardb # Database name
+      POSTGRES_USER: pillaruser # Database user
+      POSTGRES_PASSWORD: pillarpassword # Database password (change this!)
+    ports:
+      - "5432:5432" # Map host port 5432 to container port 5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Persist data
+
+volumes:
+  postgres_data: # Define the named volume
