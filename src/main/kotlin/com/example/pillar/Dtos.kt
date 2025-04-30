@@ -4,7 +4,10 @@ import com.fasterxml.jackson.annotation.JsonInclude
 import jakarta.validation.constraints.Email
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
+import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
+import java.util.Date
 import java.util.UUID
 
 data class BaseMessage(
@@ -85,55 +88,69 @@ data class AuthResponse(
 }
 
 data class createMedicationRequest(
+    val medType: MedType,
     @NotBlank(message = "Medication name is required")
     val name: String,
-    val dosage: String?,
-    val form: String?, // e.g., Tablet, Capsule
-    val frequency: String?, // e.g., Daily, Twice a day
-    val startDate: LocalDate?,
-    val endDate: LocalDate?,
+    val dose: Double,
+    val pillType: PillType,
+    val foodInstruction: FoodInstruction?,
+    val initialPillCount: Int?,
+    val refillThreshold: Int?,
+    val isActive: Boolean?,
+    val instructions: String?,
+    val frequencyType: FrequencyType?,
     val times: List<LocalTime>?, // List of specific times, e.g., ["08:00", "20:00"]
-    val instructions: String?
+    val pillsPerDose: Int?,
+    val specificDaysOfWeek: List<String>?, // e.g., ["MONDAY", "WEDNESDAY"]
+    val intervalDays: Int?,
+    val startDate: LocalDate,
+    val endDate: LocalDate
 )
 
 data class updateMedicationRequest(
     val name: String?, // Allow partial updates
     val dosage: String?,
-    val form: String?,
-    val frequency: String?,
-    val startDate: LocalDate?,
-    val endDate: LocalDate?,
+    val form: PillType?,
+    val foodInstruction: FoodInstruction?,
+    val instructions: String?,
+    val initialPillCount: Int?,
+    val refillThreshold: Int?,
+    val isActive: Boolean?,
+    val frequencyType: FrequencyType?,
     val times: List<LocalTime>?,
-    val instructions: String?
+    val pillsPerDose: Int?,
+    val specificDaysOfWeek: List<String>?,
+    val intervalDays: Int?,
+    val startDate: LocalDate,
+    val endDate: LocalDate
 )
 
 data class MedicationDTO(
     val id: Long,
     val name: String,
     val dosage: String?,
-    val form: String?,
-    val frequency: String?,
+    val form: PillType?,
+    val frequencyType: FrequencyType?, // Added
     val startDate: LocalDate?,
     val endDate: LocalDate?,
     val times: List<LocalTime>?,
     val instructions: String?,
-    val userId: UUID // Include user ID for reference
+    val userId: Long
 )
 
 fun Medication.toDTO(): MedicationDTO {
-    // Fetch associated schedules - consider efficiency for lists
-    val scheduleTimes = scheduleRepository.findByMedicationId(this.id)
-                            .mapNotNull { it.scheduledTime }
+    val schedules = this.schedules.toList()
+
     return MedicationDTO(
-        id = this.id,
-        name = this.name ?: "",
-        dosage = this.dosage,
-        form = this.form,
-        frequency = this.frequency,
+        id = this.id ?: throw IllegalStateException("Medication ID is null"),
+        name = this.pillName,
+        dosage = this.dose.toString(),
+        form = this.pillType,
+        frequencyType = schedules.firstOrNull()?.frequencyType,
         startDate = this.startDate,
         endDate = this.endDate,
-        times = scheduleTimes, // Use fetched schedule times
-        instructions = this.instructions,
-        userId = this.user?.id ?: throw IllegalStateException("Medication user is null")
+        times = schedules.map { it.timeOfDay },
+        instructions = this.comment,
+        userId = this.user.id ?: throw IllegalStateException("Medication user ID is null")
     )
 }

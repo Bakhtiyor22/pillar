@@ -8,6 +8,7 @@ import org.springframework.data.annotation.LastModifiedBy
 import org.springframework.data.annotation.LastModifiedDate
 import org.springframework.data.jpa.domain.support.AuditingEntityListener
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZonedDateTime
 import java.util.*
@@ -72,8 +73,10 @@ class Medication(
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
+    var medType: MedType,
+    var dose: Double,
+    @Enumerated(value = EnumType.STRING)
     var pillType: PillType,
-    var dose: String?,
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     var foodInstruction: FoodInstruction,
@@ -90,6 +93,8 @@ class Medication(
     @ColumnDefault(value = "true")
     var isActive: Boolean = true,
     var lastRefillReminderSentAt: Instant? = null,
+    var startDate: LocalDate,
+    var endDate: LocalDate,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)

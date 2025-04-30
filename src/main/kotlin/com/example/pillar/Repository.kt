@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
 import org.springframework.data.jpa.repository.support.JpaEntityInformation
 import org.springframework.data.jpa.repository.support.SimpleJpaRepository
@@ -83,7 +84,7 @@ interface MedicationRepository : BaseRepository<Medication> {
 interface ScheduleRepository : BaseRepository<Schedule> {
     fun findByMedicationId(medicationId: Long): List<Schedule>
 
-    @Transactional // Needed for modifying queries
-    @Modifying // Indicates the query modifies data
+    @Transactional
+    @Modifying
     fun deleteByMedicationId(medicationId: Long)
 }

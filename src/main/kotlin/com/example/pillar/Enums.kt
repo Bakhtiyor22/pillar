@@ -4,7 +4,7 @@ enum class Roles {
     ADMIN, CUSTOMER
 }
 
-enum class PillType {
+enum class MedType {
     TABLETS,
     CAPSULE,
     INJECTION,
@@ -12,6 +12,10 @@ enum class PillType {
     DROPS,
     LIQUID,
     OINTMENT
+}
+
+enum class PillType {
+    PILL, PIECE, MG, GR
 }
 
 enum class FoodInstruction {
