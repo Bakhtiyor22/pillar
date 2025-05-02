@@ -5,6 +5,8 @@ import io.jsonwebtoken.Jwts
 import io.jsonwebtoken.SignatureAlgorithm
 import io.jsonwebtoken.security.Keys
 import org.springframework.context.i18n.LocaleContextHolder
+import org.springframework.security.core.Authentication
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Component
 import java.util.Base64
 import java.util.Date
@@ -75,5 +77,5 @@ fun getCurrentUserId(): Long {
     val authentication: Authentication = SecurityContextHolder.getContext().authentication
     val userDetails = authentication.principal as? UserPrincipalDetails
         ?: throw IllegalStateException("User not authenticated")
-    return userDetails.getId() ?: throw IllegalStateException("User ID not found in principal")
+    return userDetails.id ?: throw IllegalStateException("User ID not found in principal")
 }

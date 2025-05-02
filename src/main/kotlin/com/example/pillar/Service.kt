@@ -1,18 +1,10 @@
  package com.example.pillar
 
- import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken
- import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier
- import com.google.api.client.json.gson.GsonFactory
  import org.springframework.security.authentication.AuthenticationServiceException
  import org.springframework.security.core.userdetails.UserDetailsService
  import org.springframework.security.core.userdetails.UsernameNotFoundException
  import org.springframework.stereotype.Component
  import org.springframework.stereotype.Service
- import java.io.IOException
- import java.security.GeneralSecurityException
- import com.google.api.client.http.javanet.NetHttpTransport
- import java.lang.IllegalArgumentException
- import java.util.Arrays
  import org.springframework.security.authentication.AuthenticationManager
  import org.springframework.security.authentication.DisabledException
  import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
@@ -46,27 +38,27 @@
  @Component
  class GoogleTokenVerifierService {
 
-     private val CLIENT_ID: String = System.getenv("GOOGLE_CLIENT_ID")
-     private val CLIENT_ID_ANDROID: String = System.getenv("GOOGLE_CLIENT_ID_ANDROID")
+//     private val CLIENT_ID: String = System.getenv("GOOGLE_CLIENT_ID")
+//     private val CLIENT_ID_ANDROID: String = System.getenv("GOOGLE_CLIENT_ID_ANDROID")
 
-     fun verifyToken(idTokenString: String?): GoogleIdToken? {
-         try {
-             val verifier = GoogleIdTokenVerifier.Builder(
-                 NetHttpTransport(),
-                 GsonFactory.getDefaultInstance()
-             )
-                 .setAudience(Arrays.asList(CLIENT_ID, CLIENT_ID_ANDROID))
-                 .build()
-
-             return idTokenString?.let { verifier.verify(it) }
-         } catch (e: GeneralSecurityException) {
-             throw AuthenticationServiceException("Failed to verify Google ID token", e)
-         } catch (e: IOException) {
-             throw AuthenticationServiceException("Failed to verify Google ID token", e)
-         } catch (e: IllegalArgumentException) {
-             throw AuthenticationServiceException("Invalid Google ID token", e)
-         }
-     }
+//     fun verifyToken(idTokenString: String?): GoogleIdToken? {
+//         try {
+//             val verifier = GoogleIdTokenVerifier.Builder(
+//                 NetHttpTransport(),
+//                 GsonFactory.getDefaultInstance()
+//             )
+//                 .setAudience(listOf(CLIENT_ID, CLIENT_ID_ANDROID))
+//                 .build()
+//
+//             return idTokenString?.let { verifier.verify(it) }
+//         } catch (e: GeneralSecurityException) {
+//             throw AuthenticationServiceException("Failed to verify Google ID token", e)
+//         } catch (e: IOException) {
+//             throw AuthenticationServiceException("Failed to verify Google ID token", e)
+//         } catch (e: IllegalArgumentException) {
+//             throw AuthenticationServiceException("Invalid Google ID token", e)
+//         }
+//     }
  }
 
 

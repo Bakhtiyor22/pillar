@@ -1,47 +1,42 @@
-# filepath: /Users/2110184/IdeaProjects/pillar/src/main/resources/application.yml
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/pillardb # Matches docker-compose DB name
-    username: pillaruser                         # Matches docker-compose user
-    password: pillarpassword                     # Matches docker-compose password (use your chosen password)
     driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/pillar
+    username: postgres
+    password: 2210
   jpa:
-    hibernate:
-      ddl-auto: update # Creates/updates schema automatically on startup (good for dev)
     database-platform: org.hibernate.dialect.PostgreSQLDialect
-    show-sql: true # Optional: logs SQL statements
     properties:
       hibernate:
-        format_sql: true # Optional: formats logged SQL
-  security:
-    oauth2:
-      client:
-        registration:
-          google:
-            client-id: ${GOOGLE_CLIENT_ID}
-            client-secret: ${GOOGLE_CLIENT_SECRET}
-            scope:
-              - email
-              - profile
-        provider:
-          google:
-            authorization-uri: https://accounts.google.com/o/oauth2/v2/auth
-            token-uri: https://oauth2.googleapis.com/token
-            user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
-            user-name-attribute: sub
+        temp:
+          use_jdbc_metadata_defaults: false
+        jdbc:
+          lob:
+            non_contextual_creation: true
+            show_sql: true
+    hibernate:
+      ddl-auto: update
+      naming:
+        implicit-strategy: org.hibernate.boot.model.naming.ImplicitNamingStrategyComponentPathImpl
+  main:
+    allow-bean-definition-overriding: true
   jackson:
-    time-zone: ${TIMEZONE}
-#  mail:
-#      host: ${MAIL_HOST}
-#      port: ${MAIL_PORT}
-#      username: ${MAIL_USERNAME}
-#      password: ${MAIL_PASSWORD}
-#      properties:
-#        mail:
-#          smtp:
-#            auth: true
-#            starttls:
-#              enable: true
-server:
-  servlet:
-    context-path: /api
+    time-zone: UTC  # Set a fixed timezone instead of using ${TIMEZONE}
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui
+    operationsSorter: method
+    tagsSorter: alpha
+    docExpansion: none
+  default-consumes-media-type: application/json
+  default-produces-media-type: application/json
+
+management:
+  health:
+    redis:
+      enabled: false
+
+ # Make sure all endpoints are under /api

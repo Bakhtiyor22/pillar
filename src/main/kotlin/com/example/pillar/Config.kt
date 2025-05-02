@@ -1,17 +1,19 @@
 package com.example.pillar
 
+import io.swagger.v3.oas.models.Components
+import io.swagger.v3.oas.models.OpenAPI
+import io.swagger.v3.oas.models.info.Info
+import io.swagger.v3.oas.models.security.SecurityRequirement
+import io.swagger.v3.oas.models.security.SecurityScheme
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Configuration
 import org.springframework.context.support.ResourceBundleMessageSource
 import org.springframework.data.domain.AuditorAware
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing
 import org.springframework.security.authentication.AuthenticationManager
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider
-import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -34,6 +36,8 @@ import kotlin.text.substring
 import org.springframework.security.core.GrantedAuthority
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.core.userdetails.UserDetails
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
 
 @Configuration
 @EnableJpaAuditing
@@ -92,7 +96,7 @@ class SecurityConfig(
                     "/api-docs/**",
                     "/swagger-resources/**",
                     "/webjars/**",
-                    "/swagger-ui.html",
+                    "/swagger-ui.html"
                 ).permitAll()
                 auth.anyRequest().authenticated()
             }
@@ -204,3 +208,29 @@ data class UserPrincipalDetails(
     override fun isEnabled(): Boolean = true
 }
 
+@Configuration
+class SwaggerConfig {
+
+    @Bean
+    fun customOpenAPI(): OpenAPI {
+        val securitySchemeName = "bearerAuth"
+        return OpenAPI()
+            .info(
+                Info()
+                    .title("Pillar Spring Boot API")
+                    .description("API documentation")
+                    .version("1.0")
+            )
+            .components(
+                Components()
+                    .addSecuritySchemes(securitySchemeName,
+                        SecurityScheme()
+                            .name(securitySchemeName)
+                            .type(SecurityScheme.Type.HTTP)
+                            .scheme("bearer")
+                            .bearerFormat("JWT")
+                    )
+            )
+            .addSecurityItem(SecurityRequirement().addList(securitySchemeName))
+    }
+}

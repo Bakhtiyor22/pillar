@@ -54,8 +54,8 @@ data class RegisterRequest(
     @Size(max = 100, message = "Last name must be up to 100 characters.")
     val lastName: String? = null,
 
-    @field:NotBlank(message = "Email is required.")
-    @field:Email(message = "Invalid email format.")
+    @NotBlank(message = "Email is required.")
+    @Email(message = "Invalid email format.")
     val email: String,
 
     @NotBlank(message = "Password is required.")
