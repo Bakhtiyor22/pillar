@@ -39,3 +39,9 @@ enum class ErrorCode(val code: Int) {
 enum class TokenType {
     ACCESS, REFRESH, CONFIRMATION, PASSWORD_RESET
 }
+
+enum class NotificationType {
+    MEDICATION_REMINDER,
+    LOW_STOCK_ALERT,
+    DOCTOR_APPOINTMENT
+}

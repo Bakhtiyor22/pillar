@@ -8,13 +8,16 @@ import org.springframework.data.jpa.domain.Specification
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor
 import org.springframework.data.jpa.repository.Modifying
+import org.springframework.data.jpa.repository.Query
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
 import org.springframework.data.jpa.repository.support.JpaEntityInformation
 import org.springframework.data.jpa.repository.support.SimpleJpaRepository
 import org.springframework.data.repository.NoRepositoryBean
 import org.springframework.data.repository.findByIdOrNull
+import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
 import java.util.*
 
 @Configuration
@@ -78,6 +81,14 @@ interface MedicationRepository : BaseRepository<Medication> {
     fun findByUserIdAndDeletedFalse(userId: Long, pageable: Pageable): Page<Medication>
     fun findByUserIdAndDeletedFalse(userId: Long): List<Medication>
     fun findByIdAndUserIdAndDeletedFalse(id: Long, userId: Long): Medication?
+
+    @Query("""
+        SELECT m FROM Medication m 
+        WHERE m.deleted = false 
+        AND m.currentPillCount <= m.refillThreshold 
+        AND (m.lastRefillReminderSentAt IS NULL OR m.lastRefillReminderSentAt < :cutoffTime)
+    """)
+    fun findLowStockMedicationsNeedingReminder(@Param("cutoffTime") cutoffTime: Instant): List<Medication>
 }
 
 @Repository
@@ -87,4 +98,21 @@ interface ScheduleRepository : BaseRepository<Schedule> {
     @Transactional
     @Modifying
     fun deleteByMedicationId(medicationId: Long)
+
+    fun findByNextReminderTimeBetweenAndDeletedFalse(
+        startTime: Instant,
+        endTime: Instant
+    ): List<Schedule>
+}
+
+@Repository
+interface TakenLogRepository : BaseRepository<TakenLog> {
+    fun findTopByScheduleIdOrderByScheduledTimeDesc(scheduleId: Long): TakenLog?
+}
+
+@Repository
+interface DoctorRepository : BaseRepository<Doctor> {
+//    fun findByUserIdAndDeletedFalse(userId: Long, pageable: Pageable): Page<Doctor>
+//    fun findByUserIdAndDeletedFalse(userId: Long): List<Doctor>
+//    fun findByIdAndUserIdAndDeletedFalse(id: Long, userId: Long): Doctor?
 }

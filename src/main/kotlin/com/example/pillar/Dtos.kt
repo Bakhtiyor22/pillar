@@ -104,7 +104,8 @@ data class createMedicationRequest(
     val specificDaysOfWeek: List<String>?, // e.g., ["MONDAY", "WEDNESDAY"]
     val intervalDays: Int?,
     val startDate: LocalDate,
-    val endDate: LocalDate
+    val endDate: LocalDate,
+    val doctorId: Long?
 )
 
 data class updateMedicationRequest(
@@ -122,7 +123,8 @@ data class updateMedicationRequest(
     val specificDaysOfWeek: List<String>?,
     val intervalDays: Int?,
     val startDate: LocalDate,
-    val endDate: LocalDate
+    val endDate: LocalDate,
+    val doctorId: Long?
 )
 
 data class MedicationDTO(
@@ -130,12 +132,17 @@ data class MedicationDTO(
     val name: String,
     val dosage: String?,
     val form: PillType?,
-    val frequencyType: FrequencyType?, // Added
+    val frequencyType: FrequencyType?,
     val startDate: LocalDate?,
     val endDate: LocalDate?,
     val times: List<LocalTime>?,
     val instructions: String?,
-    val userId: Long
+    val userId: Long,
+    val currentPillCount: Int,
+    val initialPillCount: Int,
+    val refillThreshold: Int,
+    val isActive: Boolean,
+    val doctor: DoctorDTO?
 )
 
 fun Medication.toDTO(): MedicationDTO {
@@ -151,6 +158,50 @@ fun Medication.toDTO(): MedicationDTO {
         endDate = this.endDate,
         times = schedules.map { it.timeOfDay },
         instructions = this.comment,
-        userId = this.user.id ?: throw IllegalStateException("Medication user ID is null")
+        userId = this.user.id ?: throw IllegalStateException("Medication user ID is null"),
+        currentPillCount = this.currentPillCount,
+        initialPillCount = this.initialPillCount,
+        refillThreshold = this.refillThreshold,
+        isActive = this.isActive,
+        doctor = this.doctor?.toDTO()
     )
 }
+
+data class DoctorDTO(
+    val id: Long,
+    val name: String,
+    val specialty: String?,
+    val clinicName: String?,
+    val contactPhone: String?,
+    val contactEmail: String?,
+    val userId: Long
+)
+
+data class CreateDoctorRequest(
+    val name: String,
+    val specialty: String?,
+    val clinicName: String?,
+    val contactPhone: String?,
+    val contactEmail: String?
+)
+
+data class UpdateDoctorRequest(
+    val name: String?,
+    val specialty: String?,
+    val clinicName: String?,
+    val contactPhone: String?,
+    val contactEmail: String?
+)
+
+fun Doctor.toDTO(): DoctorDTO {
+    return DoctorDTO(
+        id = this.id ?: throw IllegalStateException("Doctor ID is null"),
+        name = this.name,
+        specialty = this.specialty,
+        clinicName = this.clinicName,
+        contactPhone = this.contactPhone,
+        contactEmail = this.contactEmail,
+        userId = this.addedByUser?.id ?: throw IllegalStateException("Doctor user ID is null")
+    )
+}
+

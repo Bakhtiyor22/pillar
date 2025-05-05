@@ -5,9 +5,12 @@ import org.springframework.context.i18n.LocaleContextHolder
 import org.springframework.context.support.ResourceBundleMessageSource
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.context.request.WebRequest
+import java.util.stream.Collectors
+import org.slf4j.LoggerFactory // Add this import
 
 sealed class PillarException : RuntimeException() {
     abstract fun errorCode(): ErrorCode
@@ -64,6 +67,25 @@ class GlobalExceptionHandler(
     private val errorMessageSource: ResourceBundleMessageSource
 ) {
 
+    private val log = LoggerFactory.getLogger(GlobalExceptionHandler::class.java)
+
+    @ExceptionHandler(MethodArgumentNotValidException::class)
+    fun handleValidationExceptions(
+        ex: MethodArgumentNotValidException,
+        request: WebRequest
+    ): ResponseEntity<BaseMessage> {
+        log.error("Validation failed: {}", ex.message)
+        val errors = ex.bindingResult.fieldErrors.stream()
+            .map { fieldError -> "${fieldError.field}: ${fieldError.defaultMessage}" }
+            .collect(Collectors.joining(", "))
+
+        val message = BaseMessage(
+            code = ErrorCode.VALIDATION_ERROR.code,
+            message = "Validation failed: [$errors]"
+        )
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(message)
+    }
+
     @ExceptionHandler(Throwable::class)
     fun handleException(ex: Throwable, request: WebRequest): ResponseEntity<BaseMessage> {
         ex.printStackTrace()
@@ -75,9 +97,9 @@ class GlobalExceptionHandler(
             else -> {
                 val fallback = BaseMessage(
                     code = ErrorCode.GENERAL_ERROR.code,
-                    message = "Xatolik sodir bo'ldi: ${ex.message}"
+                    message = "An unexpected error occurred: ${ex.javaClass.simpleName}" // Avoid exposing raw ex.message
                 )
-                ResponseEntity.status(HttpStatus.BAD_REQUEST).body(fallback)
+                ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(fallback)
             }
         }
     }

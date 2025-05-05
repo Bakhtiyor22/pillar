@@ -10,6 +10,7 @@ import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Component
 import java.util.Base64
 import java.util.Date
+import java.util.regex.Pattern
 import javax.crypto.SecretKey
 
 @Component
@@ -78,4 +79,44 @@ fun getCurrentUserId(): Long {
     val userDetails = authentication.principal as? UserPrincipalDetails
         ?: throw IllegalStateException("User not authenticated")
     return userDetails.id ?: throw IllegalStateException("User ID not found in principal")
+}
+
+object ValidationUtils {
+
+    private val EMAIL_REGEX = Pattern.compile(
+        "^[a-zA-Z0-9_+&*-]+(?:\\.[a-zA-Z0-9_+&*-]+)*@(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,7}$"
+    )
+
+    fun validateRegistration(request: RegisterRequest) {
+        // First Name Validation (already handled by @NotBlank, @Size if they worked)
+        if (request.firstName.isBlank()) {
+            throw InvalidInputException("First name is required.")
+        }
+        if (request.firstName.length < 2 || request.firstName.length > 100) {
+            throw InvalidInputException("First name must be between 2 and 100 characters.")
+        }
+
+        // Last Name Validation (already handled by @Size if it worked)
+        request.lastName?.let {
+            if (it.length > 100) {
+                throw InvalidInputException("Last name must be up to 100 characters.")
+            }
+        }
+
+        // Email Validation
+        if (request.email.isBlank()) {
+            throw InvalidInputException("Email is required.")
+        }
+        if (!EMAIL_REGEX.matcher(request.email).matches()) {
+            throw InvalidInputException("Invalid email format.")
+        }
+
+        // Password Validation (already handled by @NotBlank, @Size if they worked)
+        if (request.password.isBlank()) {
+            throw InvalidInputException("Password is required.")
+        }
+        if (request.password.length < 8) {
+            throw InvalidInputException("Password must be at least 8 characters long.")
+        }
+    }
 }

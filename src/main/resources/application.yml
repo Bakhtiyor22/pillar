@@ -1,15 +1,13 @@
 spring:
   datasource:
-    driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:5432/pillar
-    username: postgres
-    password: 2210
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/pillar
+    username: root
+    password: 22102003
   jpa:
-    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    database-platform: org.hibernate.dialect.MySQL8Dialect
     properties:
       hibernate:
-        temp:
-          use_jdbc_metadata_defaults: false
         jdbc:
           lob:
             non_contextual_creation: true
@@ -38,5 +36,6 @@ management:
   health:
     redis:
       enabled: false
-
- # Make sure all endpoints are under /api
+server:
+  servlet:
+    context-path: /api

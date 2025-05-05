@@ -4,6 +4,9 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
+import org.springframework.data.web.PageableDefault
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 
@@ -104,3 +107,41 @@ class MedicationController(private val medicationService: MedicationService) {
         return ResponseEntity.ok(BaseMessage.OK)
     }
 }
+
+//@RestController
+//@RequestMapping("api/v1/doctors")
+//class DoctorController(private val doctorService: DoctorService) {
+//
+//    @GetMapping
+//    fun getAllDoctors(@PageableDefault(size = 10) pageable: Pageable): ResponseEntity<Page<DoctorDTO>> {
+//        val doctors = doctorService.getAllDoctors(pageable)
+//        return ResponseEntity.ok(doctors)
+//    }
+//
+//    @GetMapping("/{id}")
+//    fun getDoctorById(@PathVariable id: Long): ResponseEntity<DoctorDTO> {
+//        val doctor = doctorService.getDoctorById(id)
+//        return ResponseEntity.ok(doctor)
+//    }
+//
+//    @PostMapping
+//    fun createDoctor(@RequestBody request: CreateDoctorRequest): ResponseEntity<DoctorDTO> {
+//        val doctor = doctorService.createDoctor(request)
+//        return ResponseEntity.status(HttpStatus.CREATED).body(doctor)
+//    }
+//
+//    @PutMapping("/{id}")
+//    fun updateDoctor(
+//        @PathVariable id: Long,
+//        @RequestBody request: UpdateDoctorRequest
+//    ): ResponseEntity<DoctorDTO> {
+//        val doctor = doctorService.updateDoctor(id, request)
+//        return ResponseEntity.ok(doctor)
+//    }
+//
+//    @DeleteMapping("/{id}")
+//    fun deleteDoctor(@PathVariable id: Long): ResponseEntity<Void> {
+//        doctorService.deleteDoctor(id)
+//        return ResponseEntity.noContent().build()
+//    }
+//}
