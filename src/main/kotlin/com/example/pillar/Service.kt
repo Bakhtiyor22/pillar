@@ -133,7 +133,6 @@
      private val googleTokenVerifierService: GoogleTokenVerifierService
  ): AuthService {
 
-     @Transactional
      override fun register(request: RegisterRequest): User {
          ValidationUtils.validateRegistration(request)
 
@@ -180,7 +179,6 @@
          return savedUser
      }
 
-     @Transactional
      override fun confirmEmail(token: String): Boolean {
          val confirmationToken = tokenRepository.findByToken(token)
              ?: throw InvalidInputException("Invalid confirmation token")
@@ -223,42 +221,64 @@
                  java.util.Date.from(Instant.now())
              )
 
-             val existingSession = activeSessions.find { it.deviceName == userAgent }
+             val existingSessionOnDevice = activeSessions.find { it.deviceName == userAgent }
 
-             val session = if (existingSession != null) {
-                 existingSession.apply {
+             val sessionToUse: Session
+             val tokenResponse = jwtUtils.generateToken(user) // Generate new JWTs (access & refresh strings)
+
+             if (existingSessionOnDevice != null) {
+                 sessionToUse = existingSessionOnDevice.apply {
                      this.expiredAt = java.util.Date.from(Instant.now().plus(7, ChronoUnit.DAYS))
                  }
-             } else {
-                 if (activeSessions.size >= 2) {
-                     throw AuthenticationServiceException(
-                         "You have too many active sessions. Please log out from another device."
+                 // Save session to update its expiry
+                 sessionRepository.save(sessionToUse)
+
+                 // Handle the refresh token for this existing session
+                 val currentRefreshTokenEntity = sessionToUse.refreshToken
+                 if (currentRefreshTokenEntity != null) {
+                     // Existing token found, update its value
+                     currentRefreshTokenEntity.token = tokenResponse.refreshToken
+                     // Potentially update other fields of the Token entity if necessary
+                     tokenRepository.save(currentRefreshTokenEntity)
+                 } else {
+                     // Session existed, but no refresh token was linked. Create and link one.
+                     val newRefreshTokenEntity = Token(
+                         token = tokenResponse.refreshToken,
+                         tokenType = TokenType.REFRESH,
+                         user = user,
+                         session = sessionToUse
                      )
+                     tokenRepository.save(newRefreshTokenEntity)
+                     sessionToUse.refreshToken = newRefreshTokenEntity // Establish the link in the session object
+                     sessionRepository.save(sessionToUse) // Persist the new token link in the session
+                 }
+             } else {
+                 // No session for this device, create a new one
+                 if (activeSessions.size >= 2) {
+                     // Throwing a more specific exception might be better here
+                     throw AuthenticationServiceException("User already has the maximum number of active sessions.")
                  }
 
-                 Session(
+                 sessionToUse = Session(
                      user = user,
                      deviceName = userAgent ?: "Unknown",
-                     refreshToken = null,
+                     refreshToken = null, // Will be set after token creation
                      expiredAt = java.util.Date.from(Instant.now().plus(7, ChronoUnit.DAYS))
                  )
+                 // Save the new session first to ensure it has an ID
+                 sessionRepository.save(sessionToUse)
+
+                 // Create and link the new refresh token
+                 val newRefreshTokenEntity = Token(
+                     token = tokenResponse.refreshToken,
+                     tokenType = TokenType.REFRESH,
+                     user = user,
+                     session = sessionToUse
+                 )
+                 tokenRepository.save(newRefreshTokenEntity)
+                 sessionToUse.refreshToken = newRefreshTokenEntity // Establish the link in the session object
+                 sessionRepository.save(sessionToUse) // Persist the new token link in the session
              }
-
-             val savedSession = sessionRepository.save(session)
-
-             val tokenResponse = jwtUtils.generateToken(user)
-
-             val refreshToken = Token(
-                 token = tokenResponse.refreshToken,
-                 tokenType = TokenType.REFRESH,
-                 user = user,
-                 session = savedSession
-             )
-             tokenRepository.save(refreshToken)
-
-             // Update session with refresh token (circular reference fix)
-             savedSession.refreshToken = refreshToken
-             sessionRepository.save(savedSession)
 
              return tokenResponse
 
@@ -269,7 +289,6 @@
          }
      }
 
-     @Transactional
      override fun refreshToken(request: RefreshTokenRequest): TokenResponse {
          val refreshTokenStr = request.refreshToken
 
@@ -364,7 +383,6 @@
      //     return tokenResponse
      // }
 
-     @Transactional
      override fun initiatePasswordReset(email: String): Boolean {
          val user = userRepository.findByEmail(email)
              ?: throw UserNotFoundException("If an account exists with this email, a reset link will be sent")
@@ -407,7 +425,6 @@
          return true
      }
 
-     @Transactional
      override fun resetPassword(email: String, code: String, newPassword: String): Boolean {
          val user = userRepository.findByEmail(email)
              ?: throw UserNotFoundException("User not found")
@@ -509,16 +526,16 @@
      private val medicationRepository: MedicationRepository,
      private val userRepository: UserRepository,
      private val scheduleRepository: ScheduleRepository,
-     private val doctorRepository: DoctorRepository
+     private val doctorRepository: DoctorRepository, // Assuming you might use this later
+     private val scheduleService: ScheduleService // Inject ScheduleService
  ) : MedicationService {
+     private val log = LoggerFactory.getLogger(javaClass)
+
      override fun getAllMedications(pageable: Pageable): Page<MedicationDTO> {
          val userId = getCurrentUserId()
-         // Call the repository method that accepts Pageable
          val medicationPage: Page<Medication> = medicationRepository.findByUserIdAndDeletedFalse(userId, pageable)
-         // Map the Page<Medication> to Page<MedicationDTO>
          return medicationPage.map { it.toDTO() }
      }
-
 
      override fun getMedicationById(id: Long): MedicationDTO {
          val userId = getCurrentUserId()
@@ -533,21 +550,19 @@
          val user = userRepository.findByIdAndDeletedFalse(userId)
              ?: throw UserNotFoundException("User not found")
 
-//         // Find doctor if doctorId is provided
-//         val doctor = if (request.doctorId != null) {
-//             doctorRepository.findByIdAndUserIdAndDeletedFalse(request.doctorId, userId)
-//                 ?: throw ResourceNotFoundException("Doctor not found with id ${request.doctorId}")
-//         } else {
-//             null
-//         }
+         // val doctor = if (request.doctorId != null) {
+         //     doctorRepository.findByIdAndUserIdAndDeletedFalse(request.doctorId, userId)
+         //         ?: throw ResourceNotFoundException("Doctor not found with id ${request.doctorId}")
+         // } else {
+         //     null
+         // }
 
-         // Create the Medication entity
          val medication = Medication(
              pillName = request.name,
              medType = request.medType,
              dose = request.dose,
              pillType = request.pillType,
-             foodInstruction = request.foodInstruction ?: FoodInstruction.ANY_TIME, // Default if null
+             foodInstruction = request.foodInstruction ?: FoodInstruction.ANY_TIME,
              comment = request.instructions,
              initialPillCount = request.initialPillCount ?: 0,
              currentPillCount = request.initialPillCount ?: 0,
@@ -556,14 +571,15 @@
              startDate = request.startDate,
              endDate = request.endDate,
              user = user,
-             doctor = null,
-//             doctor = doctor,
-             schedules = mutableSetOf()
+             doctor = null, // doctor = doctor,
+             schedules = mutableSetOf() // Initialize with an empty set
          )
 
-         val savedMedication = medicationRepository.save(medication)
+         // First save of medication to get an ID
+         var savedMedication = medicationRepository.save(medication)
 
          if (request.times != null && request.frequencyType != null) {
+             val newSchedules = mutableSetOf<Schedule>()
              request.times.forEach { time ->
                  val schedule = Schedule(
                      frequencyType = request.frequencyType,
@@ -571,25 +587,40 @@
                      specificDaysOfWeek = request.specificDaysOfWeek?.joinToString(","),
                      intervalDays = request.intervalDays,
                      pillsPerDose = request.pillsPerDose ?: 1,
-                     nextReminderTime = null,
+                     nextReminderTime = null, // Will be calculated
                      isActive = true,
-                     medication = savedMedication,
+                     medication = savedMedication, // Link to the saved medication
                      takenLogs = mutableSetOf()
                  )
-                 scheduleRepository.save(schedule)
+                 newSchedules.add(schedule)
              }
-             // If not using explicit save for schedules, save medication again after adding schedules
-             // medicationRepository.save(savedMedication)
-         } else {
-             // Handle cases where no schedule info is provided, maybe log a warning or throw error if required
+             // Add all new schedules to the medication's collection
+             // Since medication.schedules is EAGER and CascadeType.ALL, saving medication will save these.
+             // However, we need to save them first or ensure they are part of the medication object before the *final* save.
+             // For clarity and to ensure schedules get IDs before reminder calculation if needed:
+             scheduleRepository.saveAll(newSchedules) // Save new schedules
+             savedMedication.schedules.addAll(newSchedules) // Add to the in-memory collection
+             savedMedication = medicationRepository.save(savedMedication) // Re-save medication to persist schedule associations if not already cascaded
          }
 
-         // Fetch the medication again to ensure schedules are loaded for the DTO conversion
-         val finalMedication = medicationRepository.findById(savedMedication.id!!).orElseThrow {
-             ResourceNotFoundException("Failed to reload medication after creation")
-         }
+         // Re-fetch to ensure the schedules collection is correctly loaded if there were cascading complexities
+         // Or rely on the 'savedMedication' instance if confident about Hibernate's state management.
+         // For robustness with EAGER fetch, savedMedication should be up-to-date.
+         // Let's use the instance returned by save.
 
-         return finalMedication.toDTO()
+         val schedulesWithReminders = mutableSetOf<Schedule>()
+         savedMedication.schedules.forEach { sch ->
+             try {
+                 schedulesWithReminders.add(scheduleService.calculateNextReminderTime(sch))
+             } catch (e: Exception) {
+                 log.error("Error calculating next reminder time for schedule ${sch.id} during medication creation: ${e.message}", e)
+                 // Decide how to handle: add schedule without reminder, or skip, or rethrow
+                 schedulesWithReminders.add(sch) // Add original schedule if calculation fails
+             }
+         }
+         savedMedication.schedules = schedulesWithReminders
+
+         return savedMedication.toDTO()
      }
 
      @Transactional
@@ -598,44 +629,31 @@
          val medication = medicationRepository.findByIdAndUserIdAndDeletedFalse(id, userId)
              ?: throw ResourceNotFoundException("Medication not found with id $id for current user")
 
-//         // Update doctor if doctorId is provided
-//         if (request.doctorId != null) {
-//             if (request.doctorId == 0L) {
-//                 // Special case: doctorId = 0 means remove doctor assignment
-//                 medication.doctor = null
-//             } else {
-//                 // Find and assign doctor
-//                 val doctor = doctorRepository.findByIdAndUserIdAndDeletedFalse(request.doctorId, userId)
-//                     ?: throw ResourceNotFoundException("Doctor not found with id ${request.doctorId}")
-//                 medication.doctor = doctor
-//             }
-//         }
-
-         // Update Medication fields from request if they are not null
+         // Update Medication's direct fields
          request.name?.let { medication.pillName = it }
-         request.dosage?.toDoubleOrNull()?.let { medication.dose = it } // Safely convert dosage string
+         request.dosage?.toDoubleOrNull()?.let { medication.dose = it }
          request.form?.let { medication.pillType = it }
          request.foodInstruction?.let { medication.foodInstruction = it }
          request.instructions?.let { medication.comment = it }
          request.initialPillCount?.let {
              medication.initialPillCount = it
-             // Optionally reset currentPillCount if initial count changes,
-             // or handle this based on specific requirements (e.g., only on refill action)
-             // medication.currentPillCount = it
+             // medication.currentPillCount = it // Decide if currentPillCount should reset
          }
          request.refillThreshold?.let { medication.refillThreshold = it }
          request.isActive?.let { medication.isActive = it }
+         request.startDate?.let { medication.startDate = it }
+         request.endDate?.let { medication.endDate = it }
 
-         medication.startDate = request.startDate
-         medication.endDate = request.endDate
-
-         // Handle schedule updates if schedule info is present in the request
+         // Handle schedule updates
          if (request.times != null && request.frequencyType != null) {
+             // Delete existing schedules associated with this medication
              scheduleRepository.deleteByMedicationId(medication.id!!)
 
-             // Clear the collection in the entity to avoid Hibernate state issues
+             // Clear the in-memory collection of schedules from the medication entity
+             // This is crucial for Hibernate to correctly manage the state and avoid issues with orphanRemoval or stale collections.
              medication.schedules.clear()
 
+             val newSchedules = mutableSetOf<Schedule>()
              request.times.forEach { time ->
                  val newSchedule = Schedule(
                      frequencyType = request.frequencyType,
@@ -643,30 +661,51 @@
                      specificDaysOfWeek = request.specificDaysOfWeek?.joinToString(","),
                      intervalDays = request.intervalDays,
                      pillsPerDose = request.pillsPerDose ?: 1,
-                     nextReminderTime = null,
+                     nextReminderTime = null, // Will be calculated
                      isActive = true,
-                     medication = medication,
+                     medication = medication, // Link to the current medication instance
                      takenLogs = mutableSetOf()
                  )
-                 scheduleRepository.save(newSchedule)
+                 newSchedules.add(newSchedule)
+             }
+             // Add all newly created schedules to the medication's collection.
+             // These will be persisted when 'medication' is saved due to CascadeType.ALL.
+             medication.schedules.addAll(newSchedules)
+         }
+
+         // Save the medication. This will persist changes to medication fields
+         // and also persist new schedules added to its collection (due to CascadeType.ALL).
+         // The schedules deleted earlier are already gone from DB.
+         var updatedMedication = medicationRepository.save(medication)
+
+         // `updatedMedication.schedules` now contains the newly saved schedules (due to EAGER fetch).
+         // Their `nextReminderTime` is likely null. Let's calculate and set it.
+         val finalSchedules = mutableSetOf<Schedule>()
+         updatedMedication.schedules.forEach { sch ->
+             try {
+                 finalSchedules.add(scheduleService.calculateNextReminderTime(sch))
+             } catch (e: Exception) {
+                 log.error("Error calculating next reminder time for schedule ${sch.id} during medication update: ${e.message}", e)
+                 finalSchedules.add(sch) // Add original schedule if calculation fails
              }
          }
+         updatedMedication.schedules = finalSchedules // Update the in-memory collection with schedules that have reminder times
 
-         val updatedMedication = medicationRepository.save(medication)
-
-         val finalMedication = medicationRepository.findById(updatedMedication.id!!).orElseThrow {
-             ResourceNotFoundException("Failed to reload medication after update")
-         }
-
-         return finalMedication.toDTO()
+         return updatedMedication.toDTO()
      }
 
      @Transactional
      override fun deleteMedication(id: Long) {
+         val userId = getCurrentUserId()
+         val medication = medicationRepository.findByIdAndUserIdAndDeletedFalse(id, userId)
+             ?: throw ResourceNotFoundException("Medication not found with id $id for current user")
+
+         // Soft delete the medication (sets deleted = true)
          medicationRepository.trash(id)
 
+         // Hard delete associated schedules. Alternatively, you could soft-delete them
+         // or rely on a DB cascade if set up. Explicit deletion is clearer here.
          scheduleRepository.deleteByMedicationId(id)
-
      }
  }
 
@@ -688,6 +727,7 @@
      private val takenLogRepository: TakenLogRepository,
      private val userRepository: UserRepository
  ) : ScheduleService {
+     private val log = LoggerFactory.getLogger(javaClass)
 
      @Transactional
      override fun calculateNextReminderTime(schedule: Schedule): Schedule {
@@ -756,28 +796,44 @@
 
              FrequencyType.EVERY_X_DAYS -> {
                  val intervalDays = schedule.intervalDays ?: 1
-
-                 val lastTakenLog = takenLogRepository.findTopByScheduleIdOrderByScheduledTimeDesc(schedule.id!!)
-
-                 if (lastTakenLog != null) {
-                     val lastTakenDate = Instant.ofEpochMilli(lastTakenLog.scheduledTime.toEpochMilli())
-                         .atZone(ZoneId.systemDefault())
-                         .toLocalDate()
-
-                     val nextDate = lastTakenDate.plusDays(intervalDays.toLong())
-                     val reminderTime = LocalDateTime.of(nextDate, schedule.timeOfDay)
-                     reminderTime.atZone(ZoneId.systemDefault()).toInstant()
+                 if (intervalDays <= 0) { // Ensure interval is positive
+                     log.warn("Interval days for schedule ID {} is not positive ({}). Cannot calculate reminder.", schedule.id, intervalDays)
+                     null // Or handle as an error
                  } else {
-                     val startDate = if (medication.startDate.isAfter(today)) medication.startDate else today
-                     val reminderTime = LocalDateTime.of(startDate, schedule.timeOfDay)
-                     val reminderInstant = reminderTime.atZone(ZoneId.systemDefault()).toInstant()
+                     val lastTakenLog = takenLogRepository.findTopByScheduleIdOrderByScheduledTimeDesc(schedule.id!!)
 
-                     if (reminderInstant.isBefore(now)) {
-                         val daysToAdd = intervalDays - (ChronoUnit.DAYS.between(startDate, today) % intervalDays).toInt()
-                         LocalDateTime.of(today.plusDays(daysToAdd.toLong()), schedule.timeOfDay)
-                             .atZone(ZoneId.systemDefault()).toInstant()
+                     if (lastTakenLog != null) {
+                         val lastTakenDate = Instant.ofEpochMilli(lastTakenLog.scheduledTime.toEpochMilli())
+                             .atZone(ZoneId.systemDefault())
+                             .toLocalDate()
+
+                         val nextDate = lastTakenDate.plusDays(intervalDays.toLong())
+                         val reminderTime = LocalDateTime.of(nextDate, schedule.timeOfDay)
+                         reminderTime.atZone(ZoneId.systemDefault()).toInstant()
                      } else {
-                         reminderInstant
+                         // Corrected logic for initial calculation for EVERY_X_DAYS
+                         var candidateDate = medication.startDate
+                         var potentialReminderInstant: Instant? = null
+
+                         // Loop to find the first reminder instant that is >= now and <= medication.endDate
+                         while (!candidateDate.isAfter(medication.endDate)) {
+                             potentialReminderInstant = LocalDateTime.of(candidateDate, schedule.timeOfDay)
+                                 .atZone(ZoneId.systemDefault()).toInstant()
+                             if (!potentialReminderInstant.isBefore(now)) {
+                                 // Found a suitable reminder time (on or after now)
+                                 break
+                             }
+                             // If before now, advance to the next interval date
+                             candidateDate = candidateDate.plusDays(intervalDays.toLong())
+                             potentialReminderInstant = null // Reset if we are moving to next date
+                         }
+
+                         // If candidateDate went past endDate, or if loop finished without finding a suitable instant
+                         if (candidateDate.isAfter(medication.endDate) && (potentialReminderInstant == null || potentialReminderInstant.isBefore(now))) {
+                             null
+                         } else {
+                             potentialReminderInstant
+                         }
                      }
                  }
              }

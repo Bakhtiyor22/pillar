@@ -108,6 +108,21 @@ class MedicationController(private val medicationService: MedicationService) {
     }
 }
 
+@RestController
+@RequestMapping("api/v1/schedules")
+@Tag(name = "Schedules", description = "Schedule management endpoints")
+class ScheduleController(private val scheduleService: ScheduleService) {
+
+    @PostMapping("/{scheduleId}/taken")
+    fun markMedicationAsTaken(
+        @PathVariable scheduleId: Long,
+        @Valid @RequestBody request: MarkTakenRequest
+    ): ResponseEntity<ScheduleDTO> {
+        val updatedSchedule = scheduleService.markMedicationTaken(scheduleId, request.pillsTaken)
+        return ResponseEntity.ok(updatedSchedule.toDTO())
+    }
+}
+
 //@RestController
 //@RequestMapping("api/v1/doctors")
 //class DoctorController(private val doctorService: DoctorService) {

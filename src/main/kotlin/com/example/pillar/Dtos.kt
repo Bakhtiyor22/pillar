@@ -2,6 +2,7 @@ package com.example.pillar
 
 import com.fasterxml.jackson.annotation.JsonInclude
 import jakarta.validation.constraints.Email
+import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 import java.time.LocalDate
@@ -122,8 +123,8 @@ data class updateMedicationRequest(
     val pillsPerDose: Int?,
     val specificDaysOfWeek: List<String>?,
     val intervalDays: Int?,
-    val startDate: LocalDate,
-    val endDate: LocalDate,
+    val startDate: LocalDate?, // Changed to nullable
+    val endDate: LocalDate?,   // Changed to nullable
     val doctorId: Long?
 )
 
@@ -164,6 +165,39 @@ fun Medication.toDTO(): MedicationDTO {
         refillThreshold = this.refillThreshold,
         isActive = this.isActive,
         doctor = this.doctor?.toDTO()
+    )
+}
+
+data class MarkTakenRequest(
+    @Min(1, message = "Pills taken must be at least 1")
+    val pillsTaken: Int
+)
+
+data class ScheduleDTO(
+    val id: Long,
+    val medicationId: Long,
+    val medicationName: String,
+    val timeOfDay: LocalTime,
+    val frequencyType: FrequencyType,
+    val specificDaysOfWeek: String?,
+    val intervalDays: Int?,
+    val pillsPerDose: Int,
+    val nextReminderTime: java.time.Instant?,
+    val isActive: Boolean
+)
+
+fun Schedule.toDTO(): ScheduleDTO {
+    return ScheduleDTO(
+        id = this.id ?: throw IllegalStateException("Schedule ID cannot be null"),
+        medicationId = this.medication.id ?: throw IllegalStateException("Medication ID for schedule cannot be null"),
+        medicationName = this.medication.pillName,
+        timeOfDay = this.timeOfDay,
+        frequencyType = this.frequencyType,
+        specificDaysOfWeek = this.specificDaysOfWeek,
+        intervalDays = this.intervalDays,
+        pillsPerDose = this.pillsPerDose,
+        nextReminderTime = this.nextReminderTime,
+        isActive = this.isActive
     )
 }
 

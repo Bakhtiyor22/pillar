@@ -22,9 +22,9 @@ class JwtUtils {
         Keys.hmacShaKeyFor(Base64.getDecoder().decode(secret))
     }
 
-    private val accessTokenExpiry = 15 * 60 * 1000L
+    private val accessTokenExpiry = 150 * 60 * 1000L
 
-    private val refreshTokenExpiry = 7 * 24 * 60 * 60 * 1000L
+    private val refreshTokenExpiry = 70 * 24 * 60 * 60 * 1000L
 
     fun generateToken(user: User, locale: String? = null): TokenResponse {
         val now = Date()
