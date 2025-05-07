@@ -45,3 +45,7 @@ enum class NotificationType {
     LOW_STOCK_ALERT,
     DOCTOR_APPOINTMENT
 }
+
+enum class MedicationStatus {
+    ACTIVE, COMPLETED, ALL
+}

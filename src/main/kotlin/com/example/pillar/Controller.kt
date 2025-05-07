@@ -16,16 +16,10 @@ import org.springframework.web.bind.annotation.*
 class AuthController(private val authService: AuthService) {
 
     @PostMapping("/register")
-    fun register(@Valid @RequestBody request: RegisterRequest): ResponseEntity<BaseMessage> {
-        authService.register(request)
-        return ResponseEntity.ok(BaseMessage.OK)
-    }
+    fun register(@Valid @RequestBody request: RegisterRequest) = authService.register(request)
 
     @GetMapping("/confirm")
-    fun confirmEmail(@RequestParam token: String): ResponseEntity<BaseMessage> {
-        authService.confirmEmail(token)
-        return ResponseEntity.ok(BaseMessage.OK)
-    }
+    fun confirmEmail(@RequestParam token: String) = authService.confirmEmail(token)
 
     @PostMapping("/login")
     fun login(
@@ -38,26 +32,17 @@ class AuthController(private val authService: AuthService) {
     }
 
     @PostMapping("/refresh")
-    fun refreshToken(@RequestBody request: RefreshTokenRequest): ResponseEntity<TokenResponse> {
-        val token = authService.refreshToken(request)
-        return ResponseEntity.ok(token)
-    }
+    fun refreshToken(@RequestBody request: RefreshTokenRequest) = authService.refreshToken(request)
 
     @PostMapping("/password-reset/request")
-    fun requestPasswordReset(@RequestParam email: String): ResponseEntity<BaseMessage> {
-        authService.initiatePasswordReset(email)
-        return ResponseEntity.ok(BaseMessage.OK)
-    }
+    fun requestPasswordReset(@RequestParam email: String) = authService.initiatePasswordReset(email)
 
     @PostMapping("/password-reset/confirm")
     fun resetPassword(
         @RequestParam email: String,
         @RequestParam code: String,
         @RequestParam newPassword: String
-    ): ResponseEntity<BaseMessage> {
-        authService.resetPassword(email, code, newPassword)
-        return ResponseEntity.ok(BaseMessage.OK)
-    }
+    ) = authService.resetPassword(email, code, newPassword)
 }
 
 @RestController
@@ -66,61 +51,21 @@ class MedicationController(private val medicationService: MedicationService) {
 
     @GetMapping
     fun getAllMedications(
-        @RequestParam(defaultValue = "0") page: Int,
-        @RequestParam(defaultValue = "10") size: Int,
-        @RequestParam(defaultValue = "id") sortBy: String,
-        @RequestParam(defaultValue = "asc") sortDir: String
-    ): ResponseEntity<Page<MedicationDTO>> {
-        val direction = if (sortDir.equals("desc", ignoreCase = true))
-            org.springframework.data.domain.Sort.Direction.DESC
-        else
-            org.springframework.data.domain.Sort.Direction.ASC
-
-        val pageable = org.springframework.data.domain.PageRequest.of(
-            page, size, org.springframework.data.domain.Sort.by(direction, sortBy)
-        )
-
-        return ResponseEntity.ok(medicationService.getAllMedications(pageable))
-    }
+        @PageableDefault(size = 10) pageable: Pageable,
+        @RequestParam(required = false) status: MedicationStatus?
+    ) = medicationService.getAllMedications(pageable, status)
 
     @GetMapping("/{id}")
-    fun getMedicationById(@PathVariable id: Long): ResponseEntity<MedicationDTO> {
-        return ResponseEntity.ok(medicationService.getMedicationById(id))
-    }
+    fun getMedicationById(@PathVariable id: Long) = medicationService.getMedicationById(id)
 
     @PostMapping
-    fun createMedication(@Valid @RequestBody request: createMedicationRequest): ResponseEntity<MedicationDTO> {
-        return ResponseEntity.ok(medicationService.createMedication(request))
-    }
+    fun createMedication(@Valid @RequestBody request: createMedicationRequest) = medicationService.createMedication(request)
 
     @PutMapping("/{id}")
-    fun updateMedication(
-        @PathVariable id: Long,
-        @Valid @RequestBody request: updateMedicationRequest
-    ): ResponseEntity<MedicationDTO> {
-        return ResponseEntity.ok(medicationService.updateMedication(id, request))
-    }
+    fun updateMedication(@PathVariable id: Long, @Valid @RequestBody request: updateMedicationRequest) = medicationService.updateMedication(id, request)
 
     @DeleteMapping("/{id}")
-    fun deleteMedication(@PathVariable id: Long): ResponseEntity<BaseMessage> {
-        medicationService.deleteMedication(id)
-        return ResponseEntity.ok(BaseMessage.OK)
-    }
-}
-
-@RestController
-@RequestMapping("api/v1/schedules")
-@Tag(name = "Schedules", description = "Schedule management endpoints")
-class ScheduleController(private val scheduleService: ScheduleService) {
-
-    @PostMapping("/{scheduleId}/taken")
-    fun markMedicationAsTaken(
-        @PathVariable scheduleId: Long,
-        @Valid @RequestBody request: MarkTakenRequest
-    ): ResponseEntity<ScheduleDTO> {
-        val updatedSchedule = scheduleService.markMedicationTaken(scheduleId, request.pillsTaken)
-        return ResponseEntity.ok(updatedSchedule.toDTO())
-    }
+    fun completeMedication(@PathVariable id: Long) = medicationService.completeMedication(id)
 }
 
 //@RestController

@@ -18,6 +18,7 @@ import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+import java.time.LocalDate
 import java.util.*
 
 @Configuration
@@ -89,6 +90,32 @@ interface MedicationRepository : BaseRepository<Medication> {
         AND (m.lastRefillReminderSentAt IS NULL OR m.lastRefillReminderSentAt < :cutoffTime)
     """)
     fun findLowStockMedicationsNeedingReminder(@Param("cutoffTime") cutoffTime: Instant): List<Medication>
+
+    @Query("""
+        SELECT m FROM Medication m 
+        WHERE m.deleted = false 
+        AND m.user.id = :userId
+        AND m.isActive = true
+        AND m.endDate >= :today
+    """)
+    fun findActiveByUserIdAndDeletedFalse(
+        @Param("userId") userId: Long,
+        @Param("today") today: LocalDate,
+        pageable: Pageable
+    ): Page<Medication>
+
+    // Query for completed medications (isActive=false OR endDate < today)
+    @Query("""
+        SELECT m FROM Medication m 
+        WHERE m.deleted = false 
+        AND m.user.id = :userId
+        AND (m.isActive = false OR m.endDate < :today)
+    """)
+    fun findCompletedByUserIdAndDeletedFalse(
+        @Param("userId") userId: Long,
+        @Param("today") today: LocalDate,
+        pageable: Pageable
+    ): Page<Medication>
 }
 
 @Repository

@@ -101,7 +101,7 @@
 
 
  interface MedicationService {
-     fun getAllMedications(pageable: Pageable): Page<MedicationDTO>
+     fun getAllMedications(pageable: Pageable, status: MedicationStatus? = null): Page<MedicationDTO>
 
      fun getMedicationById(id: Long): MedicationDTO
 
@@ -109,16 +109,15 @@
 
      fun updateMedication(id: Long, medication: updateMedicationRequest): MedicationDTO
 
-     fun deleteMedication(id: Long)
+     fun completeMedication(id: Long)
  }
 
- interface NotificationService {
+ interface ScheduleService {
+     fun calculateNextReminderTime(schedule: Schedule): Schedule
 
-     fun sendMedicationReminder(schedule: Schedule): Boolean
+     fun getSchedulesForReminders(): List<Schedule>
 
-     fun sendLowStockAlert(medication: Medication): Boolean
-
-     fun updateLastRefillReminderSent(medication: Medication): Medication
+     fun checkLowStockMedications(): List<Medication>
  }
 
  @Service
@@ -467,7 +466,7 @@
  class EmailServiceImpl( // Primary constructor for dependency injection
  //    private val mailSender: JavaMailSender, // Injects JavaMailSender
      private val templateEngine: TemplateEngine // Injects TemplateEngine
- ) : EmailService { // Implement the EmailService interface
+ ) : EmailService {
 
      override fun sendConfirmationEmail(to: String, confirmationLink: String) {
          val context = Context() // Create a new Context
@@ -526,14 +525,27 @@
      private val medicationRepository: MedicationRepository,
      private val userRepository: UserRepository,
      private val scheduleRepository: ScheduleRepository,
-     private val doctorRepository: DoctorRepository, // Assuming you might use this later
-     private val scheduleService: ScheduleService // Inject ScheduleService
+     private val doctorRepository: DoctorRepository,
+     private val scheduleService: ScheduleService
  ) : MedicationService {
      private val log = LoggerFactory.getLogger(javaClass)
 
-     override fun getAllMedications(pageable: Pageable): Page<MedicationDTO> {
+     override fun getAllMedications(pageable: Pageable, status: MedicationStatus?): Page<MedicationDTO> {
          val userId = getCurrentUserId()
-         val medicationPage: Page<Medication> = medicationRepository.findByUserIdAndDeletedFalse(userId, pageable)
+         val today = LocalDate.now()
+
+         val medicationPage: Page<Medication> = when (status) {
+             MedicationStatus.ACTIVE -> {
+                 medicationRepository.findActiveByUserIdAndDeletedFalse(userId, today, pageable)
+             }
+             MedicationStatus.COMPLETED -> {
+                 medicationRepository.findCompletedByUserIdAndDeletedFalse(userId, today, pageable)
+             }
+             MedicationStatus.ALL, null -> {
+                 medicationRepository.findByUserIdAndDeletedFalse(userId, pageable)
+             }
+         }
+
          return medicationPage.map { it.toDTO() }
      }
 
@@ -550,13 +562,6 @@
          val user = userRepository.findByIdAndDeletedFalse(userId)
              ?: throw UserNotFoundException("User not found")
 
-         // val doctor = if (request.doctorId != null) {
-         //     doctorRepository.findByIdAndUserIdAndDeletedFalse(request.doctorId, userId)
-         //         ?: throw ResourceNotFoundException("Doctor not found with id ${request.doctorId}")
-         // } else {
-         //     null
-         // }
-
          val medication = Medication(
              pillName = request.name,
              medType = request.medType,
@@ -571,54 +576,43 @@
              startDate = request.startDate,
              endDate = request.endDate,
              user = user,
-             doctor = null, // doctor = doctor,
-             schedules = mutableSetOf() // Initialize with an empty set
+             doctor = null,
+             schedules = mutableSetOf()
          )
 
-         // First save of medication to get an ID
-         var savedMedication = medicationRepository.save(medication)
+         val savedMedication = medicationRepository.save(medication)
 
          if (request.times != null && request.frequencyType != null) {
-             val newSchedules = mutableSetOf<Schedule>()
-             request.times.forEach { time ->
-                 val schedule = Schedule(
+             val schedulesToCreate = request.times.map { time ->
+                 Schedule(
                      frequencyType = request.frequencyType,
                      timeOfDay = time,
                      specificDaysOfWeek = request.specificDaysOfWeek?.joinToString(","),
                      intervalDays = request.intervalDays,
                      pillsPerDose = request.pillsPerDose ?: 1,
-                     nextReminderTime = null, // Will be calculated
+                     nextReminderTime = null,
                      isActive = true,
                      medication = savedMedication, // Link to the saved medication
                      takenLogs = mutableSetOf()
                  )
-                 newSchedules.add(schedule)
-             }
-             // Add all new schedules to the medication's collection
-             // Since medication.schedules is EAGER and CascadeType.ALL, saving medication will save these.
-             // However, we need to save them first or ensure they are part of the medication object before the *final* save.
-             // For clarity and to ensure schedules get IDs before reminder calculation if needed:
-             scheduleRepository.saveAll(newSchedules) // Save new schedules
-             savedMedication.schedules.addAll(newSchedules) // Add to the in-memory collection
-             savedMedication = medicationRepository.save(savedMedication) // Re-save medication to persist schedule associations if not already cascaded
+             }.toMutableSet()
+
+             val persistedSchedules = scheduleRepository.saveAll(schedulesToCreate)
+             savedMedication.schedules.clear() // Ensure collection is initially empty before adding persisted ones
+             savedMedication.schedules.addAll(persistedSchedules)
+             // Optionally re-save medication if needed to ensure the association is flushed,
+             // though adding persisted schedules to a managed collection should be sufficient.
+             // savedMedication = medicationRepository.save(savedMedication)
          }
 
-         // Re-fetch to ensure the schedules collection is correctly loaded if there were cascading complexities
-         // Or rely on the 'savedMedication' instance if confident about Hibernate's state management.
-         // For robustness with EAGER fetch, savedMedication should be up-to-date.
-         // Let's use the instance returned by save.
-
-         val schedulesWithReminders = mutableSetOf<Schedule>()
          savedMedication.schedules.forEach { sch ->
              try {
-                 schedulesWithReminders.add(scheduleService.calculateNextReminderTime(sch))
+                 // scheduleService.calculateNextReminderTime(sch) modifies and saves 'sch'
+                 scheduleService.calculateNextReminderTime(sch)
              } catch (e: Exception) {
                  log.error("Error calculating next reminder time for schedule ${sch.id} during medication creation: ${e.message}", e)
-                 // Decide how to handle: add schedule without reminder, or skip, or rethrow
-                 schedulesWithReminders.add(sch) // Add original schedule if calculation fails
              }
          }
-         savedMedication.schedules = schedulesWithReminders
 
          return savedMedication.toDTO()
      }
@@ -629,7 +623,6 @@
          val medication = medicationRepository.findByIdAndUserIdAndDeletedFalse(id, userId)
              ?: throw ResourceNotFoundException("Medication not found with id $id for current user")
 
-         // Update Medication's direct fields
          request.name?.let { medication.pillName = it }
          request.dosage?.toDoubleOrNull()?.let { medication.dose = it }
          request.form?.let { medication.pillType = it }
@@ -637,87 +630,63 @@
          request.instructions?.let { medication.comment = it }
          request.initialPillCount?.let {
              medication.initialPillCount = it
-             // medication.currentPillCount = it // Decide if currentPillCount should reset
          }
          request.refillThreshold?.let { medication.refillThreshold = it }
          request.isActive?.let { medication.isActive = it }
          request.startDate?.let { medication.startDate = it }
          request.endDate?.let { medication.endDate = it }
 
-         // Handle schedule updates
          if (request.times != null && request.frequencyType != null) {
-             // Delete existing schedules associated with this medication
              scheduleRepository.deleteByMedicationId(medication.id!!)
-
-             // Clear the in-memory collection of schedules from the medication entity
-             // This is crucial for Hibernate to correctly manage the state and avoid issues with orphanRemoval or stale collections.
              medication.schedules.clear()
 
-             val newSchedules = mutableSetOf<Schedule>()
-             request.times.forEach { time ->
-                 val newSchedule = Schedule(
+             val newSchedules = request.times.map { time ->
+                 Schedule(
                      frequencyType = request.frequencyType,
                      timeOfDay = time,
                      specificDaysOfWeek = request.specificDaysOfWeek?.joinToString(","),
                      intervalDays = request.intervalDays,
                      pillsPerDose = request.pillsPerDose ?: 1,
-                     nextReminderTime = null, // Will be calculated
+                     nextReminderTime = null,
                      isActive = true,
-                     medication = medication, // Link to the current medication instance
+                     medication = medication,
                      takenLogs = mutableSetOf()
                  )
-                 newSchedules.add(newSchedule)
-             }
-             // Add all newly created schedules to the medication's collection.
-             // These will be persisted when 'medication' is saved due to CascadeType.ALL.
+             }.toMutableSet()
              medication.schedules.addAll(newSchedules)
          }
 
-         // Save the medication. This will persist changes to medication fields
-         // and also persist new schedules added to its collection (due to CascadeType.ALL).
-         // The schedules deleted earlier are already gone from DB.
-         var updatedMedication = medicationRepository.save(medication)
+         val updatedMedication = medicationRepository.save(medication)
 
-         // `updatedMedication.schedules` now contains the newly saved schedules (due to EAGER fetch).
-         // Their `nextReminderTime` is likely null. Let's calculate and set it.
-         val finalSchedules = mutableSetOf<Schedule>()
          updatedMedication.schedules.forEach { sch ->
              try {
-                 finalSchedules.add(scheduleService.calculateNextReminderTime(sch))
+                 scheduleService.calculateNextReminderTime(sch)
              } catch (e: Exception) {
                  log.error("Error calculating next reminder time for schedule ${sch.id} during medication update: ${e.message}", e)
-                 finalSchedules.add(sch) // Add original schedule if calculation fails
              }
          }
-         updatedMedication.schedules = finalSchedules // Update the in-memory collection with schedules that have reminder times
 
          return updatedMedication.toDTO()
      }
 
      @Transactional
-     override fun deleteMedication(id: Long) {
+     override fun completeMedication(id: Long) {
          val userId = getCurrentUserId()
          val medication = medicationRepository.findByIdAndUserIdAndDeletedFalse(id, userId)
              ?: throw ResourceNotFoundException("Medication not found with id $id for current user")
 
-         // Soft delete the medication (sets deleted = true)
-         medicationRepository.trash(id)
+         // Mark as inactive instead of trashing
+         medication.isActive = false
+         medicationRepository.save(medication)
 
-         // Hard delete associated schedules. Alternatively, you could soft-delete them
-         // or rely on a DB cascade if set up. Explicit deletion is clearer here.
-         scheduleRepository.deleteByMedicationId(id)
+         // Optionally, you might want to deactivate schedules too
+         val schedules = scheduleRepository.findByMedicationId(medication.id!!)
+         schedules.forEach { schedule ->
+             schedule.isActive = false
+             schedule.nextReminderTime = null
+         }
+         scheduleRepository.saveAll(schedules)
      }
- }
-
- interface ScheduleService {
-
-     fun calculateNextReminderTime(schedule: Schedule): Schedule
-
-     fun getSchedulesForReminders(): List<Schedule>
-
-     fun markMedicationTaken(scheduleId: Long, pillsTaken: Int): Schedule
-
-     fun checkLowStockMedications(): List<Medication>
  }
 
  @Service
@@ -798,7 +767,7 @@
                  val intervalDays = schedule.intervalDays ?: 1
                  if (intervalDays <= 0) { // Ensure interval is positive
                      log.warn("Interval days for schedule ID {} is not positive ({}). Cannot calculate reminder.", schedule.id, intervalDays)
-                     null // Or handle as an error
+                     null
                  } else {
                      val lastTakenLog = takenLogRepository.findTopByScheduleIdOrderByScheduledTimeDesc(schedule.id!!)
 
@@ -811,24 +780,19 @@
                          val reminderTime = LocalDateTime.of(nextDate, schedule.timeOfDay)
                          reminderTime.atZone(ZoneId.systemDefault()).toInstant()
                      } else {
-                         // Corrected logic for initial calculation for EVERY_X_DAYS
                          var candidateDate = medication.startDate
                          var potentialReminderInstant: Instant? = null
 
-                         // Loop to find the first reminder instant that is >= now and <= medication.endDate
                          while (!candidateDate.isAfter(medication.endDate)) {
                              potentialReminderInstant = LocalDateTime.of(candidateDate, schedule.timeOfDay)
                                  .atZone(ZoneId.systemDefault()).toInstant()
                              if (!potentialReminderInstant.isBefore(now)) {
-                                 // Found a suitable reminder time (on or after now)
                                  break
                              }
-                             // If before now, advance to the next interval date
                              candidateDate = candidateDate.plusDays(intervalDays.toLong())
-                             potentialReminderInstant = null // Reset if we are moving to next date
+                             potentialReminderInstant = null
                          }
 
-                         // If candidateDate went past endDate, or if loop finished without finding a suitable instant
                          if (candidateDate.isAfter(medication.endDate) && (potentialReminderInstant == null || potentialReminderInstant.isBefore(now))) {
                              null
                          } else {
@@ -853,28 +817,6 @@
          )
      }
 
-     @Transactional
-     override fun markMedicationTaken(scheduleId: Long, pillsTaken: Int): Schedule {
-         val schedule = scheduleRepository.findById(scheduleId)
-             .orElseThrow { ResourceNotFoundException("Schedule not found with id $scheduleId") }
-
-         val medication = schedule.medication
-         val user = medication.user
-
-         val takenLog = TakenLog(
-             scheduledTime = schedule.nextReminderTime ?: Instant.now(),
-             pillsTakenCount = pillsTaken,
-             schedule = schedule,
-             user = user
-         )
-         takenLogRepository.save(takenLog)
-
-         medication.currentPillCount = (medication.currentPillCount - pillsTaken).coerceAtLeast(0)
-         medicationRepository.save(medication)
-
-         return calculateNextReminderTime(schedule)
-     }
-
      override fun checkLowStockMedications(): List<Medication> {
          val oneDayAgo = Instant.now().minus(24, ChronoUnit.HOURS)
 
@@ -888,9 +830,6 @@
  class NotificationScheduler(
      private val scheduleRepository: ScheduleRepository,
      private val medicationRepository: MedicationRepository,
-     private val userRepository: UserRepository
-     // private val emailService: EmailService,
-     // private val telegramService: TelegramService
  ) {
 
      private val log = LoggerFactory.getLogger(NotificationScheduler::class.java)
@@ -899,7 +838,7 @@
 
      // Runs every minute (fixedRate = 60000 milliseconds)
      @Scheduled(fixedRate = 60000)
-     @Transactional // Ensure database updates are atomic
+     @Transactional
      fun checkAndSendMedicationReminders() {
          val now = Instant.now()
          val checkUntil = now.plus(reminderLookAheadMinutes, ChronoUnit.MINUTES)
@@ -912,20 +851,15 @@
                  log.info("Sending reminder for schedule ID: ${schedule.id}, Medication: ${schedule.medication.pillName}")
 
                  val user = schedule.medication.user
-                 // emailService.sendMedicationReminder(user, schedule.medication, schedule.timeOfDay)
-                 // user.telegramChatId?.let { chatId ->
-                 //     telegramService.sendMedicationReminder(chatId, schedule.medication, schedule.timeOfDay)
-                 // }
                  println(">>> NOTIFICATION: Take ${schedule.medication.pillName} for user ${user.email} at ${schedule.timeOfDay} <<<") // Placeholder
 
-                 val nextReminder = calculateNextReminderTime(schedule, schedule.nextReminderTime!!) // Pass current time as base
+                 val nextReminder = calculateNextReminderTime(schedule, schedule.nextReminderTime!!)
                  if (nextReminder != null && !nextReminder.isAfter(schedule.medication.endDate.atStartOfDay(ZoneId.systemDefault()).toInstant())) {
                      schedule.nextReminderTime = nextReminder
                      scheduleRepository.save(schedule)
                      log.info("Updated next reminder time for schedule ID ${schedule.id} to $nextReminder")
                  } else {
-                     // End date reached or no next time calculable, deactivate schedule?
-                     schedule.isActive = false // Or handle based on requirements
+                     schedule.isActive = false
                      scheduleRepository.save(schedule)
                      log.info("Deactivating schedule ID ${schedule.id} as end date reached or next time calculation failed.")
                  }
@@ -937,7 +871,7 @@
      @Scheduled(fixedRate = 14400000)
      @Transactional
      fun checkAndSendRefillReminders() {
-         val cutoffTime = Instant.now().minus(Duration.ofDays(1)) // Don't send more than once a day
+         val cutoffTime = Instant.now().minus(Duration.ofDays(1))
          log.debug("Checking for low stock medications needing reminder before {}", cutoffTime)
 
          val lowStockMeds = medicationRepository.findLowStockMedicationsNeedingReminder(cutoffTime)
@@ -947,10 +881,6 @@
                  log.info("Sending refill reminder for Medication ID: ${medication.id}, Name: ${medication.pillName}, Current Count: ${medication.currentPillCount}")
 
                  val user = medication.user
-                 // emailService.sendRefillReminder(user, medication)
-                 // user.telegramChatId?.let { chatId ->
-                 //     telegramService.sendRefillReminder(chatId, medication)
-                 // }
                  println(">>> NOTIFICATION: Refill needed for ${medication.pillName} (Current: ${medication.currentPillCount}) for user ${user.email} <<<") // Placeholder
 
                  medication.lastRefillReminderSentAt = Instant.now()
@@ -996,7 +926,7 @@
                      if (targetDays.contains(nextDate.dayOfWeek)) {
                          potentialNextDateTime = nextDate.atTime(scheduleTime).atZone(zoneId)
                          log.debug("SPECIFIC_DAYS: Found next matching date: {}", nextDate)
-                         break // Found the next valid date
+                         break
                      }
                      nextDate = nextDate.plusDays(1)
                  }
@@ -1008,7 +938,7 @@
                  val interval = schedule.intervalDays
                  if (interval == null || interval <= 0) {
                      log.error("EVERY_X_DAYS frequency requires a positive intervalDays for schedule ID {}. Cannot calculate next reminder.", schedule.id)
-                     return null // Cannot calculate without a valid interval
+                     return null
                  }
                  potentialNextDateTime = lastReminderDateTime.toLocalDate().plusDays(interval.toLong()).atTime(scheduleTime).atZone(zoneId)
                  log.debug("EVERY_X_DAYS: Calculated potential next date/time with interval {}: {}", interval, potentialNextDateTime)
@@ -1029,9 +959,6 @@
      }
  }
 
-// /**
-//  * Service for managing doctors
-//  */
 // interface DoctorService {
 //     fun getAllDoctors(pageable: Pageable): Page<DoctorDTO>
 //

@@ -80,13 +80,7 @@ data class AuthResponse(
     val updatedAt: LocalDateTime? = null,
     val expiredAt: LocalDateTime? = null,
     val token: String? = null
-) {
-    // In Kotlin, we don't need a separate Builder class as data classes
-    // already provide copy() functionality for building objects
-    companion object {
-        fun builder() = AuthResponse()
-    }
-}
+)
 
 data class createMedicationRequest(
     val medType: MedType,
